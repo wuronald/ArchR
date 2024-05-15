@@ -41,6 +41,8 @@ ArchR::installExtraPackages() # installs Cairo and other stuff
       install("BSgenome.Hsapiens.UCSC.hg19") # needed to set addArchRGenome to hg19
 
 install.packages("hexbin") # for plotting
+
+install.packages("harmony") # for batch correction
 ```
 
 I also installed `macs2` version 2.2.9.1 locally (on macbook pro) using the command `pip install macs2`. MACS2 will be called by ArchR for peak calling purposes. Note: There is a newer versions of MACS called `MACS3` but I don't believe is it support by ArchR.
@@ -76,7 +78,7 @@ After downloading the tutorial files, we manually moved them to the `data/` fold
 # set genome to hg19
 addArchRGenome("hg19")
 
-# create arrow files
+# create arrow files (subset, first sample only)
 ArrowFiles <- createArrowFiles(
   inputFiles = inputFiles[1],
   sampleNames = names(inputFiles)[1],
@@ -87,6 +89,7 @@ ArrowFiles <- createArrowFiles(
 )
 
 ArrowFiles
+
 ```
 Note: we modified the above tutorial code to process only 1 of 3 samples. Had an error when all 3 inputFiles were used.
 
@@ -107,9 +110,10 @@ doubScores <- addDoubletScores(
 )
 
 doubScores
+
 ```
 
-The doublet results are found in the `QualityControl/scATAC_BMMC_R1` folder.
+The doublet results report are found in the `QualityControl/scATAC_BMMC_R1` folder. Note, the doublet scores are added to the arrowfiles.
 
 ## Creating an ArchRProject
 
@@ -124,8 +128,9 @@ proj <- ArchRProject(
 getAvailableMatrices(proj) #  "GeneScoreMatrix" "TileMatrix" 
 
 # filter doublets; note addDoubletScores must be run previously
-
-proj <- filterDoublets(ArchRProj = proj)
+## Default filterRatio = 1; this is a consistent filter applied on all samples
+## Can be adjusted to filter more cells
+proj <- filterDoublets(ArchRProj = proj) 
 ```
 
 An ArchRProject must be created for further analysis of our arrowfiles. About 4.9% cells were doublets and filtered out. Thus, 4689 cells were retained.
@@ -133,7 +138,7 @@ An ArchRProject must be created for further analysis of our arrowfiles. About 4.
 ## Dimensionality Reduction and Clustering
 
 ```{r dimensionality reduction and cluster}
-# IterativeLST used for dimensionality reduction
+# IterativeLSI used for dimensionality reduction
 proj <- addIterativeLSI(ArchRProj = proj, useMatrix = "TileMatrix", name = "IterativeLSI")
 
 # runs seurat's FindClusters function
@@ -144,9 +149,9 @@ proj <- addClusters(input = proj,
 
 ```
 
-IterativeLSI is used for dimensionality reduction. By default, the log(tf - idf) method is used. Can also be changed to tf - log(idf) or log(tf) - log(idf).
+IterativeLSI is used for dimensionality reduction. By default, the log(tf - idf) method is used. Can also be changed to tf - log(idf) or log(tf) - log(idf). Importantly, iterativeLSI is not deterministic and results can slightly differ if run another time on the same data.
 
-There are 8 Clusters identified.
+There are 8 Clusters identified. Cluster identification is deterministic. 
 
 ## Visualizing in a 2D UMAP Embedding
 
@@ -174,11 +179,11 @@ plotPDF(p1,p2, # vector of plots to plot
 
 ## Assigning Clusters with Gene Scores
 
-Given a vector of marker genes, we can overlay the gene scores of those markers onto the UMAP.
+Given a vector of marker genes, we can overlay the gene scores of those markers onto the UMAP. MAGIC is used for marker gene imputation, this allows for a better visualization of the data, since sparcity may make plots look quite variable. 
 
 ```{r cluster assignment with gene scores}
 
-# smooth dropout noise in gene scores
+# Marker gene imputation with MAGIC
 proj <- addImputeWeights(proj)
 
 # marker genes to use to assign clusters
@@ -274,6 +279,405 @@ Sys.Date()
 sessionInfo()
 ```
 
+# Advanced tutorial
+
+The advanced tutorial builds upon the foundation from the basic tutorial, which covered the typical workflow for preparing the ArchRProject object, dimensionality reduction, clustering and plotting. 
+
+## Creating Arrow Files
+
+Here we create the arrow files from the all three tutorial datasets found in the `HemeFragments/` folder. Previously, we used only one sample due to an error with using all three at once. The error was due to project path having a space in it. This is a common issue with dropbox folders.
+
+```{r creating arrow files, eval = FALSE }
+# set genome to hg19
+addArchRGenome("hg19")
+
+# create arrow files (subset, first sample only)
+ArrowFiles_all <- createArrowFiles(
+  inputFiles = inputFiles,
+  sampleNames = names(inputFiles),
+  minTSS = 4, # Dont set this too high because you can always increase later
+  minFrags = 1000, 
+  addTileMat = TRUE,
+  addGeneScoreMat = TRUE
+)
+
+ArrowFiles_all
+
+```
+
+## Create ArchRProject
+```{r create ArchRProject}
+projHeme1 <- ArchRProject(
+  ArrowFiles = ArrowFiles_all, 
+  outputDirectory = "HemeTutorial",
+  copyArrows = TRUE #This is recommended so that you maintain an unaltered copy for later usage.
+)
+
+# show available matrices for the project 
+getAvailableMatrices(projHeme1) #  "GeneScoreMatrix" "TileMatrix" 
+
+# filter doublets; note addDoubletScores must be run previously
+## Default filterRatio = 1; this is a consistent filter applied on all samples
+## Can be adjusted to filter more cells
+projHeme1 <- filterDoublets(ArchRProj = projHeme1) 
+```
+
+## Accessing the ArchRProject object
+```{r object access}
+
+# accessing the cellColData matrix in the ArchRProject object
+projHeme1$cellNames
+projHeme1$Sample
+projHeme1$TSSEnrichment
+
+quantile(projHeme1$TSSEnrichment)
+
+# Subset options:
+## 1. Take first 100 cells
+
+projHeme1[1:100,]
+projHeme1$cellNames[1:100]
+
+# 2. keep specific sample "scATAC_BMMC_R1"
+idxSample <- BiocGenerics::which(projHeme1$Sample %in% "scATAC_BMMC_R1")
+cellsSample <- projHeme1$cellNames[idxSample]
+projHeme1[cellsSample, ]
+
+# 3. keep cells based on TSS enrichment score (previously minTSS = 4)
+quantile(projHeme1$TSSEnrichment)
+hist(projHeme1$TSSEnrichment)
+
+idxPass <- which(projHeme1$TSSEnrichment >= 8)
+cellsPass <- projHeme1$cellNames[idxPass]
+projHeme1[cellsPass, ]
+
+# 4. Adding data to ArchRProject object
+
+## shortening sample names
+projHeme1$Sample %>% factor
+bioNames <- gsub("_R2|_R1|scATAC_","",projHeme1$Sample)
+head(bioNames)
+
+projHeme1$bioNames <- bioNames # add bioNames column
+  # addCellColData() function can also be used
+
+# 5. Accessing and operating on a specific column
+getCellColData(projHeme1)
+df <- getCellColData(projHeme1, select = "nFrags")
+df
+df <- getCellColData(projHeme1, select = c("log10(nFrags)", "nFrags - 1")) # subtraction done here
+df
+```
+
+# Plot Sample QC statistics
+
+```{r plot sample QC stats}
+
+# 1. Ridge plot of TSS Enrichment score
+p5 <- plotGroups(
+  ArchRProj = projHeme1, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "TSSEnrichment",
+    plotAs = "ridges"
+)
+
+# 2. Violin plot of TSS Enrichment score
+p6 <- plotGroups(
+    ArchRProj = projHeme1, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "TSSEnrichment",
+    plotAs = "violin",
+    alpha = 0.4,
+    addBoxPlot = TRUE
+   )
+
+# 3. Ridge plot for log10(unique nuclear fragments)
+p7 <- plotGroups(
+  ArchRProj = projHeme1, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "log10(nFrags)",
+    plotAs = "ridges"
+)
+
+# 4. Violin plot for log10(unique nuclear fragments)
+p8 <- plotGroups(
+  ArchRProj = projHeme1, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "log10(nFrags)",
+    plotAs = "violin",
+    alpha = 0.4,
+    addBoxPlot = TRUE
+)
+
+p5 + 
+  ggtitle("TSS Enrichment Score - Ridge Plot") +
+  scale_fill_brewer(palette = "Dark2")
+
+p6 + 
+  ggtitle("TSS Enrichment Score - Violin Plot") +
+  scale_fill_brewer(palette = "Dark2")
+
+p7 + 
+  ggtitle("log10(unique nuclear fragments) - Ridge Plot") +
+  scale_fill_brewer(palette = "Dark2")
+
+p8 + 
+  ggtitle("log10(unique nuclear fragments) - Violin Plot") +
+  scale_fill_brewer(palette = "Dark2")
+```
+Note: These plots show the TSSEnrichment scores after filtering via `minTSS = 4` as selected using the `createArrowFiles()`.
+
+```{r hello, eval=FALSE}
+
+print("hello world")
+b = 3
+```
+
+```{r hello2}
+
+a = 1
+#b = 2
+print(a)
+print(b)
+```
+## save pdf of QC stats
+```{r save pdf of QC states, eval = FALSE}
+plotPDF(p5,p6,p7,p8, 
+        name = "QC-Sample-Statistics.pdf", 
+        ArchRProj = projHeme1, 
+        addDOC = TRUE, # appends date to end of filename
+        width = 4, 
+        height = 4
+        )
+
+# plot list (additional ggplot layers are added here)
+
+plotList = list(a = p5 + 
+                  ggtitle("TSS Enrichment Score - Ridge Plot") +
+                  scale_fill_brewer(palette = "Dark2"), 
+                b = p6 + 
+                  ggtitle("TSS Enrichment Score - Violin Plot") +
+                  scale_fill_brewer(palette = "Dark2"),
+                c = p7 + 
+                  ggtitle("log10(unique nuclear fragments) - Ridge Plot") +
+                  scale_fill_brewer(palette = "Dark2"),
+                d = p8 + 
+                  ggtitle("log10(unique nuclear fragments) - Violin Plot") +
+                  scale_fill_brewer(palette = "Dark2")
+                )
+
+plotPDF(plotList = plotList,
+        name = "plotList-QC-Sample-Statistics.pdf", 
+        ArchRProj = projHeme1, 
+        addDOC = TRUE, 
+        width = 4, 
+        height = 4
+        )
+```
+# remove doublets
+```{r remove doublets, eval = FALSE}
+# for all 3 samples
+
+doubScores_all <- addDoubletScores(
+  input = ArrowFiles_all,
+  k = 10, #Refers to how many cells near a "pseudo-doublet" to count.
+  knnMethod = "UMAP", #Refers to the embedding to use for nearest neighbor search.
+  LSIMethod = 1
+)
+
+doubScores_all
+```
+
+# Additional Batch Correction with Harmony 
+```{r harmony batch correction}
+projHeme2 <- projHeme1
+
+# dimensionality reduction
+projHeme2 <- addIterativeLSI(
+    ArchRProj = projHeme2,
+    useMatrix = "TileMatrix", 
+    name = "IterativeLSI", 
+    iterations = 2, 
+    clusterParams = list( #See Seurat::FindClusters
+        resolution = c(0.2), 
+        sampleCells = 10000, 
+        n.start = 10
+    ), 
+    varFeatures = 25000, 
+    dimsToUse = 1:30
+)
+
+# run harmony batch correction
+projHeme2 <- addHarmony(
+    ArchRProj = projHeme2,
+    reducedDims = "IterativeLSI",
+    name = "Harmony",
+    groupBy = "Sample"
+)
+
+# new reducedDims object is created
+projHeme2@reducedDims$Harmony
+projHeme2@reducedDims$IterativeLSI # the IterativeLSI created previously
 
 
+```
 
+# Clustering
+
+```{r clustering}
+
+# add clusters based on IterativeLSI
+projHeme2 <- addClusters(
+    input = projHeme2,
+    reducedDims = "IterativeLSI",
+    method = "Seurat",
+    name = "Clusters",
+    resolution = 0.8
+)
+
+# add clusters based on HArmony batch correction
+projHeme2 <- addClusters(
+    input = projHeme2,
+    reducedDims = "Harmony",
+    method = "Seurat",
+    name = "Clusters_harmony",
+    resolution = 0.8
+)
+
+# check clusters
+
+projHeme2$Clusters %>% table
+projHeme2$Clusters_harmony %>% table
+```
+
+IterativeLSI followed by clustering shows 12 clusters, whereas harmony has 13 total.
+
+## Heatmap of cluster membership of samples
+```{r confusion matrix and heatmap }
+library(pheatmap)
+
+# 1. IterativeLSI clusters
+# make confusion matrix
+cM <- confusionMatrix(paste0(projHeme2$Clusters), paste0(projHeme2$Sample))
+cM
+
+# normalize
+cM <- cM / Matrix::rowSums(cM)
+
+# heatmap
+p <- pheatmap::pheatmap(
+    mat = as.matrix(cM), 
+    color = paletteContinuous("whiteBlue"), 
+    border_color = "black"
+)
+p
+
+# 2. Harmony clusters
+
+# make confusion matrix
+cM_2 <- confusionMatrix(paste0(projHeme2$Clusters_harmony), paste0(projHeme2$Sample))
+cM_2
+
+# normalize
+cM_2 <- cM_2 / Matrix::rowSums(cM_2)
+
+# heatmap
+p2 <- pheatmap::pheatmap(
+    mat = as.matrix(cM_2), 
+    color = paletteContinuous("whiteBlue"), 
+    border_color = "black"
+)
+p2
+
+p
+p2
+```
+
+
+# UMAP
+
+```{r UMAP}
+projHeme2 <- addUMAP(
+    ArchRProj = projHeme2, 
+    reducedDims = "IterativeLSI", 
+    name = "UMAP", 
+    nNeighbors = 30, 
+    minDist = 0.5, 
+    metric = "cosine"
+)
+
+# adds harmony to embeddings
+projHeme2 <- addUMAP(
+    ArchRProj = projHeme2, 
+    reducedDims = "Harmony", 
+    name = "UMAP_harmony", 
+    nNeighbors = 30, 
+    minDist = 0.5, 
+    metric = "cosine"
+)
+
+# access UMAP embeddings
+
+projHeme2@embeddings$UMAP
+projHeme2@embeddings$UMAP_harmony %>% View
+```
+
+## Plot umap
+```{r plot umap}
+
+# plot by sample
+p1 <- plotEmbedding(ArchRProj = projHeme2, 
+                    colorBy = "cellColData", 
+                    name = "Sample", 
+                    embedding = "UMAP"
+                    )
+
+
+p2 <- plotEmbedding(ArchRProj = projHeme2, 
+                    colorBy = "cellColData", 
+                    name = "Sample", 
+                    embedding = "UMAP_harmony"
+                    )
+ggAlignPlots(p1, p2, type = "h")
+
+# plot by clusters
+p3 <- plotEmbedding(ArchRProj = projHeme2, 
+                    colorBy = "cellColData", 
+                    name = "Clusters", 
+                    embedding = "UMAP"
+                    )
+
+p4 <- plotEmbedding(ArchRProj = projHeme2, 
+                    colorBy = "cellColData", 
+                    name = "Clusters_harmony", 
+                    embedding = "UMAP_harmony"
+                    )
+
+
+ggAlignPlots(p3, p4, type = "h")
+
+
+# plot the LSI embedding with harmony labels
+p5 <- plotEmbedding(ArchRProj = projHeme2, 
+                    colorBy = "cellColData", 
+                    name = "Clusters_harmony", 
+                    embedding = "UMAP"
+                    )
+ggAlignPlots(p3, p4, p5, type = "h")
+
+
+```
+## save PDF of UMAPs
+```{r save pdf of umaps, eval = FALSE}
+
+plotPDF(p1,p2,p3,p4,p5,
+        name = "Plot-UMAP-Sample-HarmonyClusters.pdf", 
+        ArchRProj = projHeme2, 
+        addDOC = TRUE, 
+        width = 5, height = 5)
+
+```
