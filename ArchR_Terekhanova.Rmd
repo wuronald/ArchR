@@ -1,0 +1,219 @@
+---
+title: "ArchR_Terekhanova"
+author: "Ronald Wu"
+date: '2024-05-15'
+output: html_document
+---
+
+# Introduction
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Install packages
+
+```{r install packages, eval = FALSE}
+# install devtools: allows install of packages from github
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+
+# if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+devtools::install_github("GreenleafLab/ArchR", ref="master", repos = BiocManager::repositories())
+
+library(ArchR)
+ArchR::installExtraPackages() # installs Cairo and other stuff
+
+ library(BiocManager)
+      install("BSgenome.Hsapiens.UCSC.hg19") # needed to set addArchRGenome to hg19
+
+install.packages("hexbin") # for plotting
+
+install.packages("harmony") # for batch correction
+```
+
+# Load Libraries
+```{r load libraries}
+library(ArchR) # version 1.0.2
+
+```
+
+# Download Terekhanova GBM Samples
+
+# ArchR Setup
+```{r ArchR Setup}
+library("here")
+set.seed(1)
+addArchRThreads(threads = 2) 
+
+parent_dir <- here("data","Terekhanova")
+
+# Get a list of subdirectories 
+subdirs <- list.dirs(parent_dir, recursive = FALSE, full.names = FALSE)
+# Extract prefixes before the underscore to get sample names
+prefixes <- sapply(subdirs, function(x) strsplit(x, "_")[[1]][1])
+
+# Get list of relative path to fragments.tsv.gz for all Terekhanova samples
+list_files <- function(dir_path) {
+  full_paths <- list.files(dir_path, recursive = TRUE, full.names = FALSE, pattern = "fragments.tsv.gz")
+  return(full_paths)
+}
+matching_files <- list_files(dir_path = here("data","Terekhanova"))
+
+# 
+inputFiles1 <- paste0(here("data","Terekhanova",matching_files))
+names(inputFiles1) <- prefixes
+```
+
+# Create Arrow Files
+```{r create arrow files}
+
+```
+
+## Creating Arrow Files
+
+```{r creating arrow files}
+# set genome to hg38
+addArchRGenome("hg38")
+
+# create arrow files (subset, first sample only)
+ArrowFiles <- createArrowFiles(
+  inputFiles = inputFiles1,
+  sampleNames = names(inputFiles1),
+  minTSS = 4, # Dont set this too high because you can always increase later
+  minFrags = 1000, 
+  addTileMat = TRUE,
+  addGeneScoreMat = TRUE
+)
+
+ArrowFiles
+
+```
+
+Took ~25 mins
+
+## Inferring doublets
+
+```{r inferring doublets}
+doubScores <- addDoubletScores(
+  input = ArrowFiles,
+  k = 10, #Refers to how many cells near a "pseudo-doublet" to count.
+  knnMethod = "UMAP", #Refers to the embedding to use for nearest neighbor search.
+  LSIMethod = 1
+)
+
+doubScores
+
+```
+
+# Create ArchRProject
+```{r create ArchRProject, eval = FALSE}
+proj <- ArchRProject(
+  ArrowFiles = ArrowFiles, 
+  outputDirectory = "Terekhanova",
+  copyArrows = FALSE #This is recommended so that you maintain an unaltered copy for later usage.
+)
+
+# show available matrices for the project 
+getAvailableMatrices(proj) #  "GeneScoreMatrix" "TileMatrix" 
+
+# filter doublets; note addDoubletScores must be run previously
+## Default filterRatio = 1; this is a consistent filter applied on all samples
+## Can be adjusted to filter more cells
+proj <- filterDoublets(ArchRProj = proj) 
+```
+
+Filtering 646 cells from ArchRProject!
+	C3L-02705 : 646 of 8040 (8%)
+	
+Total cells remaining: 7394
+
+```{r dimensionality reduction and cluster}
+# IterativeLSI used for dimensionality reduction
+proj <- addIterativeLSI(ArchRProj = proj, useMatrix = "TileMatrix", name = "IterativeLSI")
+
+# runs seurat's FindClusters function
+proj <- addClusters(input = proj, 
+                    reducedDims = "IterativeLSI" # name of the reducedDims object
+                    )
+```
+
+
+# Plot Sample QC statistics
+
+```{r plot sample QC stats}
+
+# Fragment Size Distribution
+
+p1 <- plotFragmentSizes(ArchRProj = proj)
+
+# TSS Enrichment profile
+p2 <- plotTSSEnrichment(ArchRProj = proj)
+
+
+# 1. Ridge plot of TSS Enrichment score
+p5 <- plotGroups(
+  ArchRProj = proj, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "TSSEnrichment",
+    plotAs = "ridges"
+)
+
+# 2. Violin plot of TSS Enrichment score
+p6 <- plotGroups(
+    ArchRProj = proj, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "TSSEnrichment",
+    plotAs = "violin",
+    alpha = 0.4,
+    addBoxPlot = TRUE
+   )
+
+# 3. Ridge plot for log10(unique nuclear fragments)
+p7 <- plotGroups(
+  ArchRProj = proj, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "log10(nFrags)",
+    plotAs = "ridges"
+)
+
+# 4. Violin plot for log10(unique nuclear fragments)
+p8 <- plotGroups(
+  ArchRProj = proj, 
+    groupBy = "Sample", 
+    colorBy = "cellColData", 
+    name = "log10(nFrags)",
+    plotAs = "violin",
+    alpha = 0.4,
+    addBoxPlot = TRUE
+)
+
+p1 + 
+  ggtitle("Fragment Sizes") +
+  scale_fill_brewer(palette = "Dark2")
+
+p2 + 
+  ggtitle("TSS Enrichment Profile") +
+  scale_fill_brewer(palette = "Dark2")
+
+p5 + 
+  ggtitle("TSS Enrichment Score - Ridge Plot") +
+  scale_fill_brewer(palette = "Dark2")
+
+p6 + 
+  ggtitle("TSS Enrichment Score - Violin Plot") +
+  scale_fill_brewer(palette = "Dark2")
+
+p7 + 
+  ggtitle("log10(unique nuclear fragments) - Ridge Plot") +
+  scale_fill_brewer(palette = "Dark2")
+
+p8 + 
+  ggtitle("log10(unique nuclear fragments) - Violin Plot") +
+  scale_fill_brewer(palette = "Dark2")
+```

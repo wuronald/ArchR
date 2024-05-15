@@ -431,19 +431,6 @@ p8 +
 ```
 Note: These plots show the TSSEnrichment scores after filtering via `minTSS = 4` as selected using the `createArrowFiles()`.
 
-```{r hello, eval=FALSE}
-
-print("hello world")
-b = 3
-```
-
-```{r hello2}
-
-a = 1
-#b = 2
-print(a)
-print(b)
-```
 ## save pdf of QC stats
 ```{r save pdf of QC states, eval = FALSE}
 plotPDF(p5,p6,p7,p8, 
@@ -681,3 +668,17 @@ plotPDF(p1,p2,p3,p4,p5,
         width = 5, height = 5)
 
 ```
+
+## Saving and Loading an ArchRProject
+```{r saving and loading project, eval = FALSE}
+# check where output directory is assigned
+getOutputDirectory(projHeme2) # HemeTutorial/
+
+# save
+projHeme2 <- saveArchRProject(ArchRProj = projHeme2)
+
+# load
+# proj <- loadArchRProject(path = "HemeTutorial")
+```
+
+By default, saving the project will overwrite the files in the output directory `HemeTutorial/`, which we assigned earlier when creating the ArchRProject object.
