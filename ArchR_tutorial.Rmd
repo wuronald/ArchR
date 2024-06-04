@@ -483,7 +483,7 @@ doubScores_all
 ```{r harmony batch correction}
 projHeme2 <- projHeme1
 
-# dimensionality reduction
+# Dimensionality Reduction
 projHeme2 <- addIterativeLSI(
     ArchRProj = projHeme2,
     useMatrix = "TileMatrix", 

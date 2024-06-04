@@ -1,0 +1,237 @@
+---
+title: "AUCell_Terekhanova"
+author: "Ronald Wu"
+date: "2024-05-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Install Packages
+```{r install packages, eval = FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("AUCell")
+```
+
+# Load Libraries
+```{r load libraries}
+library(AUCell)
+library(ArchR) # version 1.0.2
+library(here)
+library(tidyverse)
+```
+
+# Load ArchRProject
+
+We load the previous ArchRProject we've been working on. See `ArchR_Terekhanova.Rmd` for more details.
+
+```{r load ArchRProject, eval = FALSE}
+# load ArchRProject from Terekhanova/
+proj <- loadArchRProject(path = "Terekhanova")
+```
+
+# AUCell
+
+## Load scATAC ArchR object and extract GeneScoreMatrix
+```{r AUCell, eval = FALSE}
+
+# create a folder for AUCell results
+dir.create("Terekhanova/AUCell/")
+
+# load expression matrix (from ArchRProject object)
+  ## Access the GeneScoreMatrix as SummarizedExperiment
+exprMatrix <- getMatrixFromProject(proj,
+                     useMatrix = "GeneScoreMatrix")
+
+# save the matrix for easier load in the future
+save(exprMatrix, file="Terekhanova/AUCell/TerekhanovaExprMatrix.RData") # 1.1 gb
+load(file="Terekhanova/AUCell/TerekhanovaExprMatrix.RData") # 1.1 gb
+
+# access the sparse dgCMatrix in the SummarizedExperiment 
+assayNames(exprMatrix) # GeneScoreMatrix
+assay(exprMatrix) %>% dim # 24919 30187
+
+
+# add gene names to the rownames slot 
+rownames(exprMatrix) <- rowData(exprMatrix)$name
+# rownames(assay(exprMatrix)) <- exprMatrix@elementMetadata$name
+```
+
+Since the `getMatrixFromProject()` function from ArchR returns a SummarizedExperiment object containing a sparse `dgCMatrix`, we can do without conversion to a dgCMatrix.  
+
+## Load gene sets
+
+AUCell has implemented functions to utilize signatures obtained using the `GSEAbase` package. We will skip using those functions, since our external gene sets of interest are `.txt` files. They have been moved to the `data/Signatures/` folder.
+
+```{r load gene sets}
+# load DAEG and Neftel signatures saved as previously saved as .txt
+
+## get paths
+txt_files <- list.files(path = here("data","Signatures"), pattern = "\\.txt$", full.names = TRUE)
+
+## read the .txt files into a list
+geneSets <- lapply(txt_files, read_lines)
+
+## name the elements of the list based on the original file name (without path and extension)
+names(geneSets) <- tools::file_path_sans_ext(basename(txt_files))
+
+## add the gene set size to the names (req GSEABase obj)
+# geneSets <- setGeneSetNames(geneSets, newNames=paste(names(geneSets), " (", nGenes(geneSets) ,"g)", sep=""))
+
+# add hypoxia signatures:
+
+# check if genes in the geneSets are in the GeneScoreMatrix
+
+calculate_overlap <- function(se, geneSets) {
+  # extract gene symbols from the SummarizedExperiment
+  se_genes <- rownames(se)
+  # make data frame to store info
+  results <- data.frame(
+    "Gene_Set" = character(),
+    "Set_Size" = integer(),
+    "Overlap" = integer(),
+    "Percentage_OL" = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Loop through each gene set
+  for (set_name in names(geneSets)) {
+    gene_set <- geneSets[[set_name]]
+    
+    ## Calculate overlap
+    overlap <- length(intersect(se_genes, gene_set))
+    set_size <- length(gene_set)
+    percentage <- (overlap / set_size) * 100
+    
+    ## Add results to the data frame
+    results <- rbind(
+      results,
+      data.frame(
+        "Gene_Set" = set_name,
+        "Set_Size" = set_size,
+        "Overlap" = overlap,
+        "Percentage_OL" = percentage,
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+  return(results)
+}
+
+calculate_overlap(exprMatrix, geneSets) # call
+
+testSets <- list(a = c("CA9","GLUT1","SLC2A1"))
+calculate_overlap(exprMatrix, testSets)
+```
+Based on the calculated overlap table, all the genes for each geneset except for 1 or 2 are present in the scATAC data, which is good. The size of the genesets are small however.
+
+# score gene signatures
+```{r score gene signature, eval = FALSE}
+
+# calculates both cell ranking and enrichment
+# cells_AUC <- AUCell_run(exprMatrix, geneSets)
+
+# alternative: calculate cell ranking and enrichment seperately
+cell_rankings <- AUCell_buildRankings(exprMatrix, plotStats = FALSE)
+cells_AUC <- AUCell_calcAUC(geneSets, cell_rankings)
+
+
+# save cells_AUC
+save(cells_AUC, file="Terekhanova/AUCell/cells_AUC.RData")
+
+cell_rankings
+cells_AUC
+```
+> Genes in the gene sets NOT available in the dataset: 
+	Neftel_AC: 	1 (3% of 39)
+	Neftel_MES: 	2 (2% of 95)
+	Neftel_MES1: 	1 (2% of 50)
+	Neftel_MES2: 	1 (2% of 50)
+	Neftel_NPC: 	4 (4% of 89)
+	Neftel_NPC1: 	2 (4% of 50)
+	Neftel_NPC2: 	3 (6% of 50)
+	Neftel_OPC: 	1 (2% of 50)
+
+As mentioned in the vignette, the top 5% of genes in the rankings are used by default. We can adjust the `aucMaxRank` parameter in the `AUCell_run()` function depending on if we think our dataset expresses more genes. Due to the sparsity in the scATAC data, I think we will leave it to speed up analysis.
+
+## explore thresholds
+
+Depending on the type of distribution for each gene set, several thresholds are calculated and assigned by default. We can visually inspect these thresholds by plotting their histograms. Manual intervention can be done to reassign a threshold if a given distribution is ambiguous.
+
+```{r thresholds}
+set.seed(42)
+par(mfrow=c(3,3))
+
+# plot all AUC histograms (for all geneSets) and calculates likely thresholds
+cells_assignment <- AUCell_exploreThresholds(cells_AUC, 
+                                             plotHist = TRUE,
+                                             assign = TRUE)
+warningMsg <- sapply(cells_assignment, function(x) x$aucThr$comment)
+warningMsg[which(warningMsg!="")]
+
+# look at possible thresholds for (DAEG_UP_24)
+cells_assignment$DAEG_UP_24$aucThr$thresholds
+cells_assignment$Neftel_MES2$aucThr$thresholds
+
+# look at auto-selected thresholds for (DAEG_UP_24)
+cells_assignment$DAEG_UP_24$aucThr$selected # minimumDens
+# of cells assigned 
+cells_assignment$DAEG_UP_24$assignment %>% length() # 23353
+```
+
+## manual threshold setting
+
+Let's inspect the distribution of AUC for gene sets of interest. For DAEG_UP_24, the auto-selected AUC threshold minimumDens was 0.01381947, representing the inflecting point of the density curve. 
+
+```{r manual thresholds}
+# plot AUC histogram for DAEG_UP_24 gene set: 
+geneSetName <- rownames(cells_AUC)[grep("DAEG_UP_24", rownames(cells_AUC))]
+AUCell_plotHist(cells_AUC[geneSetName,], aucThr= 0.01381947,
+                title = "old threshold")
+abline(v= 0.01381947)
+
+# set new threshold
+newThr = 0.10400131 # L_k2 threshold
+
+# get barcodes for cells that pass new threshold
+newSelectedCells <- names(which(getAUC(cells_AUC)[geneSetName,]>newThr))
+length(newSelectedCells) # 1448
+
+# get barcodes for cells for previous default threshold
+oldSelectedCells <- cells_assignment$DAEG_UP_24$assignment
+length(oldSelectedCells) # 23353
+```
+
+When looking at the density curve, there is no obvious inflection point. There is also no obvious bimodal distribution. We do expect hypoxic cells to be a gradient rather than a positive vs negative bimodal distribution.
+
+If we use this default threshold, of the 30187 cells in the dataset, majority of the cells (23353; 77%) would be classified as positive for this signature. That seems high. We might need to manually set threshold for DAEG_UP_24.
+
+```{r save AUCell histogram, eval = FALSE}
+
+# save PDF for AUCell histogram (all geneSets)
+pdf(here("Terekhanova", "Plots",
+         "2024-06-04_Terekhanova_AUCell_default_aucThr_plotHist.pdf"))
+for (i in names(cells_AUC)) {
+  aucThr <- as.numeric(cells_assignment[[i]]$aucThr$selected)
+                    
+  AUCell_plotHist(cells_AUC[i, ], aucThr = aucThr)
+  abline(v = aucThr) # vertical line at threshold
+  text( # prints threshold on left side of plot
+    x = 0.15,
+    y = 500,
+    labels = print(paste0("aucThr: ", round(aucThr,5),"\n",
+           "CellsAssigned: ", length(cells_assignment[[i]]$assignment)
+           )),
+    cex = 1,
+    col = "red",
+    adj = 1
+  )
+}
+dev.off()
+
+```
+# Exploring the cell-assignment (table & heatmap)

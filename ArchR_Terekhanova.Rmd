@@ -37,14 +37,77 @@ install.packages("harmony") # for batch correction
 # Load Libraries
 ```{r load libraries}
 library(ArchR) # version 1.0.2
-
+library("here")
 ```
 
 # Download Terekhanova GBM Samples
 
+The Terekhanova samples are available on [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE240822). There are many different tumour types here and also snRNA data. We are interested in the 18 snATAC GBM samples.
+
+Here we use the command line to download the files, extract the archive and delete the archives. 
+```{bash download samples, eval = FALSE}
+
+# Make a folder to store the downloaded files
+dir="data/Terekhanova"
+
+if [ ! -d "$dir" ]; then
+  echo "Creating $dir directory..."
+  mkdir -p "$dir"
+else
+  echo "$dir directory already exists."
+fi
+
+# change directory
+cd data/Terekhanova/
+
+# download the first 4
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710021/suppl/GSM7710021_C3L-02705_CPT0189650015_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710022/suppl/GSM7710022_C3L-03405_CPT0224600013_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710023/suppl/GSM7710023_C3L-03968_CPT0228220004_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710024/suppl/GSM7710024_C3N-00662_CPT0087680014_snATAC_GBM.tar.gz
+
+#
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710025/suppl/GSM7710025_C3N-00663_CPT0087730014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710026/suppl/GSM7710026_C3N-01334_CPT0125220004_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710027/suppl/GSM7710027_C3N-01518_CPT0167640014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710028/suppl/GSM7710028_C3N-01798_CPT0167750015_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710029/suppl/GSM7710029_C3N-01814_CPT0167860015_snATAC_GBM.tar.gz
+
+#
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710030/suppl/GSM7710030_C3N-01816_CPT0168080014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710031/suppl/GSM7710031_C3N-01818_CPT0168270014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710032/suppl/GSM7710032_C3N-02181_CPT0168380014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710033/suppl/GSM7710033_C3N-02186_CPT0168720014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710034/suppl/GSM7710034_C3N-02188_CPT0168830014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710035/suppl/GSM7710035_C3N-02769_CPT0205570014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710036/suppl/GSM7710036_C3N-02783_CPT0205890014_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710037/suppl/GSM7710037_C3N-02784_CPT0206000015_snATAC_GBM.tar.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7710nnn/GSM7710038/suppl/GSM7710038_C3N-03186_CPT0206880004_snATAC_GBM.tar.gz
+
+# extract archives and delete archive
+
+for file in *.tar.gz; do tar -xzf "$file" && rm "$file"; done
+
+```
+
 # ArchR Setup
+
 ```{r ArchR Setup}
-library("here")
 set.seed(1)
 addArchRThreads(threads = 2) 
 
@@ -57,28 +120,26 @@ prefixes <- sapply(subdirs, function(x) strsplit(x, "_")[[1]][1])
 
 # Get list of relative path to fragments.tsv.gz for all Terekhanova samples
 list_files <- function(dir_path) {
-  full_paths <- list.files(dir_path, recursive = TRUE, full.names = FALSE, pattern = "fragments.tsv.gz")
+  full_paths <- list.files(dir_path, recursive = TRUE, full.names = FALSE, pattern = "fragments.tsv.gz$")
   return(full_paths)
 }
 matching_files <- list_files(dir_path = here("data","Terekhanova"))
 
-# 
+# make character vector with sample name and full path to their respective fragments.tsv.gz
 inputFiles1 <- paste0(here("data","Terekhanova",matching_files))
 names(inputFiles1) <- prefixes
+
+# check inputFiles1
+inputFiles1
 ```
 
-# Create Arrow Files
-```{r create arrow files}
-
-```
-
-## Creating Arrow Files
+# Creating Arrow Files
 
 ```{r creating arrow files}
 # set genome to hg38
 addArchRGenome("hg38")
 
-# create arrow files (subset, first sample only)
+# create arrow files
 ArrowFiles <- createArrowFiles(
   inputFiles = inputFiles1,
   sampleNames = names(inputFiles1),
@@ -90,9 +151,20 @@ ArrowFiles <- createArrowFiles(
 
 ArrowFiles
 
+# create single arrow file for C3L-03968 alone :
+# ArrowFiles1 <- createArrowFiles(
+#   inputFiles = inputFiles1[3],
+#   sampleNames = names(inputFiles1)[3],
+#   minTSS = 4, # Dont set this too high because you can always increase later
+#   minFrags = 1000, 
+#   addTileMat = TRUE,
+#   addGeneScoreMat = TRUE
+# )
+
+# consolidate all the arrowfiles names
+ArrowFiles <- c(ArrowFiles,ArrowFiles1)
 ```
 
-Took ~25 mins
 
 ## Inferring doublets
 
@@ -109,6 +181,7 @@ doubScores
 ```
 
 # Create ArchRProject
+
 ```{r create ArchRProject, eval = FALSE}
 proj <- ArchRProject(
   ArrowFiles = ArrowFiles, 
@@ -124,23 +197,12 @@ getAvailableMatrices(proj) #  "GeneScoreMatrix" "TileMatrix"
 ## Can be adjusted to filter more cells
 proj <- filterDoublets(ArchRProj = proj) 
 ```
-
-Filtering 646 cells from ArchRProject!
+	Filtering 2755 cells from ArchRProject!
+	C3N-00662 : 629 of 7937 (7.9%)
+	C3L-03405 : 987 of 9939 (9.9%)
 	C3L-02705 : 646 of 8040 (8%)
+	C3L-03968 : 493 of 7026 (7%)
 	
-Total cells remaining: 7394
-
-```{r dimensionality reduction and cluster}
-# IterativeLSI used for dimensionality reduction
-proj <- addIterativeLSI(ArchRProj = proj, useMatrix = "TileMatrix", name = "IterativeLSI")
-
-# runs seurat's FindClusters function
-proj <- addClusters(input = proj, 
-                    reducedDims = "IterativeLSI" # name of the reducedDims object
-                    )
-```
-
-
 # Plot Sample QC statistics
 
 ```{r plot sample QC stats}
@@ -213,7 +275,384 @@ p7 +
   ggtitle("log10(unique nuclear fragments) - Ridge Plot") +
   scale_fill_brewer(palette = "Dark2")
 
-p8 + 
+p8 +
   ggtitle("log10(unique nuclear fragments) - Violin Plot") +
   scale_fill_brewer(palette = "Dark2")
+```
+
+
+# Dimensionality Reduction and Clustering
+
+```{r dimensionality reduction and clustering}
+# IterativeLSI used for dimensionality reduction
+proj <- addIterativeLSI(ArchRProj = proj, useMatrix = "TileMatrix", name = "IterativeLSI")
+
+# runs seurat's FindClusters function
+proj <- addClusters(input = proj, 
+                    reducedDims = "IterativeLSI" # name of the reducedDims object
+                    )
+
+
+# table showing # of cells per cluster
+proj$Clusters %>% table
+
+# total # of clusters
+proj$Clusters %>% table %>% length # 16
+```
+
+Here we reduce dimensions using the recommended IterativeLSI method and then run identify clusters using `seurat`'s addCluster() function on these reducedDims. 
+
+# Batch Correction and Clustering
+
+Since there are many individual patient samples in the Terekhanova dataset, we anticipate that this might be an issue that requires batch correction with harmony. Here we use Harmony to integrate the scATAC data for batch correction. Harmony typically operates on reduced dimensions such as those identified in PCA in typical scRNA-seq pipelines. Here in scATAC-seq data, harmony is run on reduced dimensions from IterativeLSI.
+
+```{r batch correction and clustering}
+# run harmony batch correction 
+proj <- addHarmony(
+    ArchRProj = proj,
+    reducedDims = "IterativeLSI",
+    name = "Harmony",
+    groupBy = "Sample" # the variable to correct for
+)
+
+# add clusters based on Harmony batch correction
+proj <- addClusters(
+    input = proj,
+    reducedDims = "Harmony",
+    method = "Seurat",
+    name = "Clusters_harmony",
+    resolution = 0.8
+)
+
+# table of # of cells per cluster
+
+proj$Clusters_harmony %>% table # harmony clusters
+
+# total harmony clusters
+proj$Clusters_harmony %>% table %>% length # 23
+
+```
+Here we see an increased number of cells identified after harmony correction (23) compared to the default IterativeLSI (16).
+
+# UMAP
+Here we add a UMAP embedding based on the reducedDims object and assign it to the ArchRProject object. Both the IterativeLSI and the Harmony reducedDims are used, so we can compare later for evidence of batch effect correction.
+
+Importantly, this step is for visualization purposes and cluster determination is done prior to UMAP in the LSI sub-space.
+```{r UMAP}
+
+# UMAP embeddings with IterativeLSI
+proj <- addUMAP(
+    ArchRProj = proj, 
+    reducedDims = "IterativeLSI", 
+    name = "UMAP", 
+    nNeighbors = 30, 
+    minDist = 0.5, 
+    metric = "cosine"
+)
+
+# adds harmony to embeddings
+proj <- addUMAP(
+    ArchRProj = proj, 
+    reducedDims = "Harmony", 
+    name = "UMAP_harmony", 
+    nNeighbors = 30, 
+    minDist = 0.5, 
+    metric = "cosine"
+)
+
+# access UMAP embedding
+
+proj@embeddings$UMAP
+proj@embeddings$UMAP_harmony %>% View
+```
+
+## Plot umap
+```{r plot umap}
+
+# plot by sample (IterativeLSI vs Harmony embeddings)
+u1 <- plotEmbedding(ArchRProj = proj, 
+                    colorBy = "cellColData", 
+                    name = "Sample", 
+                    embedding = "UMAP"
+                    )
+
+u2 <- plotEmbedding(ArchRProj = proj, 
+                    colorBy = "cellColData", 
+                    name = "Sample", 
+                    embedding = "UMAP_harmony"
+                    )
+
+# plot by clusters
+u3 <- plotEmbedding(ArchRProj = proj, 
+                    colorBy = "cellColData", 
+                    name = "Clusters", 
+                    embedding = "UMAP"
+                    )
+
+u4 <- plotEmbedding(ArchRProj = proj, 
+                    colorBy = "cellColData", 
+                    name = "Clusters_harmony", 
+                    embedding = "UMAP_harmony"
+                    )
+
+# plot the LSI embedding with harmony labels
+u5 <- plotEmbedding(ArchRProj = proj, 
+                    colorBy = "cellColData", 
+                    name = "Clusters_harmony", 
+                    embedding = "UMAP"
+                    )
+
+ggAlignPlots(u1, u2, type = "h")
+ggAlignPlots(u3, u4, type = "h")
+ggAlignPlots(u3, u4, u5, type = "h")
+```
+## save PDF of UMAPs
+```{r save pdf of umaps, eval = FALSE}
+
+# plot PDFs
+## u1 vs u2: plot by sample (IterativeLSI vs Harmony embeddings)
+## u3 vs u4: plot by clusters 
+plotPDF(u1,u2,u3,u4,u5,
+        name = "Terekhanova-Plot-UMAP-Sample-HarmonyClusters.pdf", 
+        ArchRProj = proj, 
+        addDOC = TRUE, 
+        width = 5, height = 5)
+
+```
+
+# Using Gene Scores
+
+## Identifying marker genes for each cluster
+Here we set the groupBy parameter to either clusters defined by IterativeLSI or Harmony. The bias parameter in the getMarkerFeatures() function allows us the quantile normalize based on various features, such as TSS and log10(nfrag). This step is crucial for the identification of background cells that each cluster or group can be compared to. Note, ArchR identifies a set of background cells for each group/cluster.
+
+This will return a SummarizedExperiment object containing a list of DataFrame objects for each cluster. 
+
+Took about ~15 mins for each run of getMarkerFeatures(). getMarkerFeatures returns a SummarizedExperiment object. 
+```{r marker gene identification}
+
+# using IterativeLSI clusters
+markerGenes <- getMarkerFeatures(
+  ArchRProj = proj,
+  useMatrix = "GeneScoreMatrix",
+  groupBy = "Clusters",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  testMethod = "wilcoxon"
+)
+
+# using Harmony clusters
+markerGene_harmony <- getMarkerFeatures(
+  ArchRProj = proj,
+  useMatrix = "GeneScoreMatrix",
+  groupBy = "Clusters_harmony",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  testMethod = "wilcoxon"
+)
+
+```
+
+## Retrieve cluster specific marker genes
+Here we can access the marker genes that are stored in as the `SummarizedExperiment` objects using the `getMarkers()` function. Notably, this getMarkers function has a default cutOff "FDR <= 0.1 & Log2FC >= 0.5".
+
+```{r get markers}
+
+markerList <- getMarkers(markerGenes, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
+markerList_harmony <- getMarkers(markerGene_harmony, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
+
+# look at specific cluster: 6
+markerList$C6
+markerList_harmony$C6
+
+# set gene of interests to label on heatmap
+goi_labels <- c("SOX2", 
+                "GFAP", "AQP4", 
+                "MBP",
+                "CD34"
+                )
+
+# heatmap with GOIs
+
+heatmapGS <- plotMarkerHeatmap(
+  seMarker = markerGenes,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1.25",
+  labelMarkers = goi_labels,
+  transpose = TRUE
+)
+
+# heatmap with top 15 markers for each cluster labelled
+heatmapGS2 <- plotMarkerHeatmap(
+  seMarker = markerGenes,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1.25",
+  nlabel = 15,
+  transpose = TRUE
+)
+
+plotMarkerHeatmap(
+  seMarker = markerGenes,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1.25",
+  nLabel = 5,
+  transpose = TRUE
+)
+
+# heatmap using the harmony clusters
+
+heatmapGS3 <- plotMarkerHeatmap(
+  seMarker = markerGene_harmony,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1.25",
+  labelMarkers = goi_labels,
+  transpose = TRUE
+)
+
+# heatmap with top 15 markers for each cluster labelled
+heatmapGS4 <- plotMarkerHeatmap(
+  seMarker = markerGene_harmony,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1.25",
+  nLabel = 15,
+  transpose = TRUE
+)
+
+
+
+# draw above heatmaps
+ComplexHeatmap::draw(heatmapGS, 
+                     heatmap_legend_side = "bot",
+                     annotation_legend_side = "bot")
+
+ComplexHeatmap::draw(heatmapGS2, 
+                     heatmap_legend_side = "bot",
+                     annotation_legend_side = "bot")
+
+# volcano plots
+## # are there negative log2FC values?
+
+# function to plot volcano plot given a Summarized Experiment object
+plot_volcano <- function(df) {
+  markerList <- getMarkers(df,
+                           cutOff = "FDR <= 0.1" # remove default cutoff to show all points
+                           ) # retrieve list of DataFrame from SummarizedExperiment
+  cluster_names <- names(markerList)
+  # 
+  # z <- lapply(markerList, function(x) {
+  #   ggplot(as.data.frame(x), aes(x = Log2FC, y = -log10(FDR))) +
+  #     geom_point() +
+  #     xlab("Log2FC") +
+  #     ylab("-log10(FDR)") +
+  #     coord_cartesian(xlim = c(-3, 3)) +
+  #     ggtitle(paste0("Volcano Plot: ", cluster_names[i]))
+  # })
+  # 
+  # return(z)
+  
+  
+  z <- lapply(1:length(markerList), function(x){
+    ggplot(as.data.frame(markerList[[x]]), aes(x = Log2FC, y = -log10(FDR))) +
+      geom_point() +
+      xlab("Log2FC") +
+      ylab("-log10(FDR)") +
+      coord_cartesian(xlim = c(-3, 3)) +
+      ggtitle(paste0("Volcano Plot: ", cluster_names[x]))
+    
+  })
+  return(z)
+}
+
+# plot volcano plot for all the clusters
+plot_volcano(markerGenes)
+
+```
+
+About 2900 markers were identified. These markers were identified using the following cutoff:
+"FDR <= 0.01 & Log2FC >= 1.25". Thus, only upregulated genes are identified. To confirm this, I set the cutOff param to not exclude by direction of fold change. The volcano plot for each of the 16 clusters show that indeed there are significant marker genes that are downregulated.
+
+
+
+## Identifying cell groups based on gene score signatures and marker genes
+During the creation of the arrow file, the gene scores are computed and stored as a GeneScoreMatrix by default. Below, I identify the hypoxic cells using single markers and a hypoxic signature (reference??).
+
+```{r hypoxic gene scores}
+
+# define hypoxic related signature
+hypoxicGenes <- c(
+  "CA9",
+  "SLC2A1",
+  "VEGFA"
+)
+
+# UMAP with overlay with hypoxicGenes
+p <- plotEmbedding(
+    ArchRProj = proj, 
+    colorBy = "GeneScoreMatrix", 
+    name = hypoxicGenes, 
+    embedding = "UMAP",
+    quantCut = c(0.01, 0.95),
+    imputeWeights = NULL
+)
+
+p2 <- plotEmbedding(
+    ArchRProj = proj, 
+    colorBy = "GeneScoreMatrix", 
+    name = hypoxicGenes, 
+    embedding = "UMAP_harmony",
+    quantCut = c(0.01, 0.95),
+    imputeWeights = NULL
+)
+
+# draw umaps
+p
+p2
+
+# draw smoothened UMAPS:
+  # smooth gene scores by imputing weights using Magic
+proj <- addImputeWeights(proj)
+
+p3 <- plotEmbedding(
+    ArchRProj = proj, 
+    colorBy = "GeneScoreMatrix", 
+    name = hypoxicGenes, 
+    embedding = "UMAP",
+    quantCut = c(0.01, 0.95),
+    imputeWeights = getImputeWeights(proj)
+)
+
+p4 <- plotEmbedding(
+    ArchRProj = proj, 
+    colorBy = "GeneScoreMatrix", 
+    name = hypoxicGenes, 
+    embedding = "UMAP_harmony",
+    quantCut = c(0.01, 0.95),
+    imputeWeights = getImputeWeights(proj)
+)
+
+p3
+p4
+
+p2
+p4
+```
+Note: ImputWeights also creates a large file on disk (1.22 GB x 2)
+
+Next, cell groups are created based on the above scores. The hypoxic group can be compared to normoxic for further analysis, such as differential gene expression and motif analysis.
+
+```{r gene score matrix, eval = FALSE}
+
+# GeneScoreMatrix access
+getAvailableMatrices(proj)
+
+getGenes(proj)
+
+# Access the GeneScoreMatrix as SummarizedExperiment
+gs_mat <- getMatrixFromProject(proj,
+                     useMatrix = "GeneScoreMatrix")
+```
+# Using GBmap to label scATAC clusters
+
+## Saving and Loading an ArchRProject
+```{r saving and loading project, eval = FALSE}
+# check where output directory is assigned
+getOutputDirectory(proj) # Terekhanova/
+
+# save ArchRProject object and associated arrowfiles to output directory
+proj <- saveArchRProject(ArchRProj = proj)
+
+# load
+proj <- loadArchRProject(path = "Terekhanova")
 ```
