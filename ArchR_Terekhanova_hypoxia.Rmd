@@ -1,7 +1,7 @@
 ---
-title: "ArchR_Terekhanova"
+title: "ArchR_Terekhanova_hypoxia"
 author: "Ronald Wu"
-date: '2024-05-15'
+date: '2024-06-18'
 output: html_document
 ---
 
@@ -163,7 +163,7 @@ ArrowFiles
 # )
 
 # consolidate all the arrowfiles names
-ArrowFiles <- c(ArrowFiles,ArrowFiles1)
+#ArrowFiles <- c(ArrowFiles,ArrowFiles1)
 ```
 
 
@@ -367,9 +367,7 @@ proj@embeddings$UMAP
 proj@embeddings$UMAP_harmony %>% View
 ```
 
-## Plot UMAP Embeddings
-Here we use the ArchR::plotEmbedding function to plot the UMAP embedding and the UMAP_Harmony embedding.
-
+## Plot umap
 ```{r plot umap}
 
 # plot by sample (IterativeLSI vs Harmony embeddings)
@@ -398,14 +396,13 @@ u4 <- plotEmbedding(ArchRProj = proj,
                     embedding = "UMAP_harmony"
                     )
 
-# plot the LSI embedding with harmony cluster labels
+# plot the LSI embedding with harmony labels
 u5 <- plotEmbedding(ArchRProj = proj, 
                     colorBy = "cellColData", 
                     name = "Clusters_harmony", 
                     embedding = "UMAP"
                     )
 
-# plot horizontally aligned ggplots
 ggAlignPlots(u1, u2, type = "h")
 ggAlignPlots(u3, u4, type = "h")
 ggAlignPlots(u3, u4, u5, type = "h")
@@ -419,7 +416,7 @@ ggAlignPlots(u3, u4, u5, type = "h")
 plotPDF(u1,u2,u3,u4,u5,
         name = "Terekhanova-Plot-UMAP-Sample-HarmonyClusters.pdf", 
         ArchRProj = proj, 
-        addDOC = TRUE, # adds date of creation to end of filename
+        addDOC = TRUE, 
         width = 5, height = 5)
 
 ```
@@ -578,8 +575,12 @@ During the creation of the arrow file, the gene scores are computed and stored a
 hypoxicGenes <- c(
   "CA9",
   "SLC2A1",
+  "HK2",
   "VEGFA"
 )
+
+# delete this later (pulled from AUCell)
+hypoxicGenes <- geneSets$DAEG_UP_24
 
 # UMAP with overlay with hypoxicGenes
 p <- plotEmbedding(
@@ -603,10 +604,7 @@ p2 <- plotEmbedding(
 # draw umaps
 p
 p2
-```
 
-## Draw Smoothened UMAP with ImputeWeights
-```{r draw smoothened UMAPS}
 # draw smoothened UMAPS:
   # smooth gene scores by imputing weights using Magic
 proj <- addImputeWeights(proj)
@@ -635,11 +633,30 @@ p4
 p2
 p4
 ```
-Note: ImputWeights also creates two large files on disk (1.22 GB x 2) in the `Terekhanova/ImputeWeights/` folder.
+Note: ImputWeights also creates a large file on disk (1.22 GB x 2)
+
+## save PDF of UMAPs
+```{r save pdf of umaps with gene scores, eval = FALSE}
+
+# plot PDFs
+ 
+plotPDF(p2,
+        name = "Terekhanova-Plot-UMAP-HarmonyClusters-genescore-DAEG_24_UP.pdf", 
+        ArchRProj = proj, 
+        addDOC = TRUE, 
+        width = 5, height = 5)
+
+plotPDF(p4,
+        name = "Terekhanova-Plot-UMAP-HarmonyClusters-genescore-imputed-DAEG_24_UP.pdf", 
+        ArchRProj = proj, 
+        addDOC = TRUE, 
+        width = 5, height = 5)
+
+```
 
 Next, cell groups are created based on the above scores. The hypoxic group can be compared to normoxic for further analysis, such as differential gene expression and motif analysis.
 
-# Access GeneScoreMatrix as SummarizedExperiment
+
 ```{r gene score matrix, eval = FALSE}
 
 # GeneScoreMatrix access
@@ -651,13 +668,9 @@ getGenes(proj)
 gs_mat <- getMatrixFromProject(proj,
                      useMatrix = "GeneScoreMatrix")
 ```
-
 # Using GBmap to label scATAC clusters
-```{r GBMap}
 
-# PLACEHOLDER ***
 
-```
 
 # Create Psuedo-bulk Replicates
 
@@ -665,13 +678,13 @@ First, create pseudo-bulk replicates for downstream peak calling via MACS2. Here
 
 ```{r pseudobulk, eval = FALSE}
 # Save pseudobulk info as new ArchRProject object
-
-proj2 <- addGroupCoverages(ArchRProj = proj,
-                           groupBy = "Clusters_harmony" # group for which the pseudobulk rep is made
+proj$DAEG_UP_24_newThr <- as.factor(proj$DAEG_UP_24_newThr)
+proj_hyp <- addGroupCoverages(ArchRProj = proj,
+                           groupBy = "DAEG_UP_24_newThr" # group for which the pseudobulk rep is made
                            )
-```
-The `addGroupCoverages` is a long (88 mins) and memory intensive step that produces large intermediate files in the `Terekhanova/GroupCoverages/Clusters_harmony/` folder.
 
+```
+The `addGroupCoverages` is a long (13 mins) and memory intensive step that produces large intermediate files in the `Terekhanova/GroupCoverages/DAEG_UP_24_newThr/` folder.
 # Calling Peaks
 
 ## MACS2 Peak Calling
@@ -680,26 +693,26 @@ The `addGroupCoverages` is a long (88 mins) and memory intensive step that produ
 pathToMacs2 <- findMacs2()
 
 # call peaks
-proj2 <- addReproduciblePeakSet(ArchRProj = proj2,
-                       groupBy = "Clusters_harmony",
+proj_hyp2 <- addReproduciblePeakSet(ArchRProj = proj_hyp,
+                       groupBy = "DAEG_UP_24_newThr",
                        pathToMacs2 = pathToMacs2)
 ```
-Took 131 mins to call peaks.
+Took 19 mins to call peaks.
 
 ## Explore peaks using GRanges
-
 ```{r explore peaks GRanges}
 # show peak set in ArchRProject object
-proj2@peakSet
-
+proj_hyp2@peakSet
 
 # get the peak set
-myPeakSet <- getPeakSet(proj2)
+myPeakSet <- getPeakSet(proj_hyp2)
 
 myPeakSet
 
 # tabulate type of peaks
 table(myPeakSet$peakType)
+
+
 ```
 There are 4 types of peaks annotated under the peakType column in the `Granges` object:
 1. Distal
@@ -707,19 +720,22 @@ There are 4 types of peaks annotated under the peakType column in the `Granges` 
 3. Intronic
 4. Promoter
 
-## Add Peak Matrix to ArchRProject
+
 ```{r add peak matrix, eval = FALSE}
 # check available matrices
-getAvailableMatrices(proj2)
+getAvailableMatrices(proj)
+getAvailableMatrices(proj_hyp)
+getAvailableMatrices(proj_hyp2)
+getAvailableMatrices(proj_hyp3)
 
 # add Peak Matrix to new ArchRProject object
 
-proj3 <- addPeakMatrix(proj2)
+proj_hyp3 <- addPeakMatrix(proj_hyp2)
 
 # check available matrices
-getAvailableMatrices(proj3)
+getAvailableMatrices(proj_hyp3)
 ```
--took 16 mins
+-took mins
 
 ## Marker Peaks
 Next, we use the `getMarkerFeatures()` on the PeakMatrix to identify Marker Peaks. This is in contrast to Marker Genes, which we found using the GeneScoreMatrix:
@@ -730,57 +746,62 @@ This was used to identify marker genes associated with each cluster, such as tho
 ```{r get marker peaks, eval = FALSE}
 
 # check cluster labels
-table(proj3$Clusters_harmony)
+table(proj_hyp3$Clusters_harmony)
 
 # check hypoxia labels
-table(proj3$PIMO_pos)
+table(proj_hyp3$DAEG_UP_24_newThr)
 
 # get marker peaks for harmony clusters
-markersPeaks <- getMarkerFeatures(
-  ArchRProj = proj3, 
+# markersPeaks <- getMarkerFeatures(
+#   ArchRProj = proj3, 
+#   useMatrix = "PeakMatrix",
+#   groupBy = "Clusters_harmony",
+#   bias = c("TSSEnrichment", "log10(nFrags)"),
+#   testMethod = "wilcoxon"
+# )
+
+# fix incompatible dimensions error (change factor back to logical)
+proj_hyp3$DAEG_UP_24_newThr <- as.logical(proj_hyp3$DAEG_UP_24_newThr)
+
+# get marker peaks for DAEG_UP_24_newThr groups
+markersPeaks_DAEG_UP_24_newThr <- getMarkerFeatures(
+  ArchRProj = proj_hyp3,
   useMatrix = "PeakMatrix",
-  groupBy = "Clusters_harmony",
+  groupBy = "DAEG_UP_24_newThr",
   bias = c("TSSEnrichment", "log10(nFrags)"),
   testMethod = "wilcoxon"
 )
 
 # get marker peaks for PIMO_pos groups
-# markersPeaks_PIMO_pos <- getMarkerFeatures(
-#   ArchRProj = proj3, 
-#   useMatrix = "PeakMatrix",
-#   groupBy = "PIMO_pos",
-#   bias = c("TSSEnrichment", "log10(nFrags)"),
-#   testMethod = "wilcoxon"
-# )
-
+markersPeaks_PIMO_pos <- getMarkerFeatures(
+  ArchRProj = proj_hyp3,
+  useMatrix = "PeakMatrix",
+  groupBy = "PIMO_pos",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  testMethod = "wilcoxon"
+)
 ```
-Took 22 mins. 674 mb matrix, summarized expt object
+Took 3 mins. 200 mb matrices, summarized expt object
+
 Failed for markersPeaks_PIMO_pos
 > Error in cor(estbgdP, obsbgdP) : incompatible dimensions
-
-Solutions: 
-  + maybe need to create Pseudobulk for this PIMO_pos group
-  + convert this group from logical to factor or character
+maybe need to create Pseudobulk for this PIMO_pos group, and then convert to logical
 
 ## Explore Marker Peaks
 ```{r explore marker peaks}
-# SummarizedExperiment containing the marker peaks for harmony clusters
-markersPeaks
+# SummarizedExperiment containing the marker peaks for DAEG_UP_24_newThr
+markersPeaks_DAEG_UP_24_newThr
 
 # marker peaks for each cluster into a List of DataFrame objects
 ## filtered for FDR and Log2FC
-markerPeaksList <- getMarkers(markersPeaks, 
+markersPeaks_DAEG_UP_24_newThr_List <- getMarkers(markersPeaks_DAEG_UP_24_newThr, 
                          cutOff = "FDR <= 0.01 & Log2FC >=1")
 
 # access marker peaks for a specific cluster (or cell type)
 
-markerPeaksList$C1
+markersPeaks_DAEG_UP_24_newThr_List$`TRUE`
+markersPeaks_DAEG_UP_24_newThr_List$`FALSE`
 
-proj3@cellColData$Sample
-
-table(proj3$Sample,proj3$PIMO_pos)
-table(proj3$Sample,proj3$DAEG_UP_24_newThr)
-table(proj3$DAEG_UP_24_newThr)
 ```
 # Plot Marker Peaks
 
@@ -789,11 +810,13 @@ table(proj3$DAEG_UP_24_newThr)
 We can use ArchR built in plotting functions to plot both a MA plot and a volcano plot of the marker peaks. Using the `markerPeaks` SummarizedExperiment object we generated above. Here we use `plotMarkers()`, which is a new version of the previous plotting function `markerPlot()`.
 
 ```{r plot MA and volcano}
+
+markersPeaks <- markersPeaks_DAEG_UP_24_newThr
 # MA plot (at C1 cluster)
 
 pma <- plotMarkers(
   seMarker = markersPeaks, # summarizedExperiment
-  name = "C1",
+  name = "TRUE",
   cutOff = "FDR <= 0.1 & abs(Log2FC) >= 1",
   plotAs = "MA" # select MA plot
 )
@@ -802,7 +825,7 @@ pma <- plotMarkers(
 # volcano plot (at C1 cluster)
 vma <- plotMarkers(
   seMarker = markersPeaks, # summarizedExperiment
-  name = "C1",
+  name = "TRUE",
   cutOff = "FDR <= 0.1 & abs(Log2FC) >= 1",
   plotAs = "Volcano" # select Volcano plot
 )
@@ -811,6 +834,7 @@ vma <- plotMarkers(
 heatmapPeaks <- plotMarkerHeatmap(
   seMarker = markersPeaks,
   cutOff = "FDR <= 0.1 & Log2FC >=0.5",
+  plotLog2FC = TRUE,
   transpose = TRUE
 )
 
@@ -901,11 +925,12 @@ ArchR also allows the pairwise comparison within a selected group from `cellColD
 Another example of a group in `cellColData` is the `PIMO_pos` column, which can be selected by `groupBy` and then we can compare the cells that were assigned by AUCell as `TRUE` vs `FALSE`. We can set `useGroups = "TRUE"` and `bdgGroups = "FALSE"`, which allows us to find peaks enriched in hypoxic cells.
 
 ```{r pairwise, eval = FALSE}
+proj_hyp3$DAEG_UP_24_newThr <- as.logical(proj_hyp3$DAEG_UP_24_newThr)
 
 markerTest <- getMarkerFeatures(
-  ArchRProj = proj3,
+  ArchRProj = proj_hyp3,
   useMatrix = "PeakMatrix",
-  groupBy = "PIMO_pos",
+  groupBy = "DAEG_UP_24_newThr",
   bias = c("TSSEnrichment", "log10(nFrags)"),
   useGroups = "TRUE",
   bgdGroups = "FALSE"
@@ -915,26 +940,40 @@ markerTest <- getMarkerFeatures(
 > Error in cor(estbgdP, obsbgdP) : incompatible dimensions
 Potential error due to lack of pseudobulk of PIMO_pos cells. Note, the proj3 object pseudobulk is run on the `Harmony_clusters`.
 
-# Motif Enrichment
-```{r Motif Enrichment}
+```{r plot pairwise results}
+pwMA <- markerPlot(seMarker = markerTest, name = "TRUE", 
+                   cutOff = "FDR <= 0.1 & abs(Log2FC) >= 1", plotAs = "MA")
+pwVolc <- markerPlot(seMarker = markerTest, name = "TRUE", 
+                   cutOff = "FDR <= 0.1 & abs(Log2FC) >= 1", plotAs = "Volcano")
 
-# MOTIF Enrichment Placeholder
+
+pwMA
+pwVolc
+
+
+table(proj_hyp3$PIMO_pos)
+table(proj_hyp3$DAEG_UP_24)
+table(proj_hyp3$DAEG_UP_24_newThr)
 ```
 
-# Saving and Loading an ArchRProject
+# Motif Enrichment
 
-When saving an ArchRProject, all associated arrowfile and derived folders will be copied to the default output directory. This directory was assigned during the creation of the object and can be quickly checked via `getOutputDirectory`.
-
-Subsequent loading of an ArchRProject object requires the path where it was saved. 
-
+## Saving and Loading an ArchRProject
 ```{r saving and loading project, eval = FALSE}
 # check where output directory is assigned
 getOutputDirectory(proj) # Terekhanova/
 
 # save ArchRProject object and associated arrowfiles to output directory
-proj <- saveArchRProject(ArchRProj = proj)
-# proj2 has pseudobulk and macs2 peaks
-proj2 <- saveArchRProject(ArchRProj = proj2)
+proj <- saveArchRProject(ArchRProj = proj,
+                         outputDirectory = "Save-proj")
+
+# proj_hyp is proj with pseudobulk via group coverages
+proj_hyp <- saveArchRProject(ArchRProj = proj_hyp,
+                             outputDirectory = "Save-proj_hyp")
+
+# proj_hyp2 has pseudobulk and macs2 peaks
+proj_hyp2 <- saveArchRProject(ArchRProj = proj_hyp2
+                              outputDirectory = "Save-proj_hyp2")
 # load
 proj <- loadArchRProject(path = "Terekhanova")
 #proj2 <- loadArchRProject(path = "Terekhanova")

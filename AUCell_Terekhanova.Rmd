@@ -196,11 +196,12 @@ Quantiles with the number of genes detected by cell
 As mentioned in the vignette, the top 5% of genes in the rankings are used by default as the threshold to calculate AUC. We can adjust the `aucMaxRank` parameter in the `AUCell_run()` or `AUCell_calcAUC()` function depending on if we think our dataset expresses more genes. Due to the sparsity in the scATAC data, I think we will leave it to speed up analysis.
 
 For each gene set, AUCell asks the question, are the genes in the gene set detected in the top 5% (default) genes ranked in a given cell.
-## explore thresholds
+
+## Explore thresholds
 
 Depending on the type of distribution for each gene set, several thresholds are calculated and assigned by default. We can visually inspect these thresholds by plotting their histograms. Manual intervention can be done to reassign a threshold if a given distribution is ambiguous.
 
-```{r thresholds}
+```{r thresholds, eval = FALSE}
 set.seed(42)
 par(mfrow=c(3,3))
 
@@ -252,6 +253,7 @@ When looking at the density curve, there is no obvious inflection point. There i
 
 If we use this default threshold, of the 30187 cells in the dataset, majority of the cells (23353; 77%) would be classified as positive for this signature. That seems high. We might need to manually set threshold for DAEG_UP_24.
 
+## AUCell histogram
 ```{r save AUCell histogram, eval = FALSE}
 
 # save PDF for AUCell histogram (all geneSets)
@@ -296,6 +298,40 @@ dev.off()
 # Exploring the cell-assignment (table & heatmap)
 
 Given that we've assigned the cells (their barcodes) basesd on their AUC for each given gene set, we can visualize this through a binary incidence matrix via a heatmap.
+```{r tabulate cell assignments}
+# cells for each patient
+table(proj$Sample)
+
+# hypoxic cells for each patient
+table(proj$Sample, proj$DAEG_UP_24_newThr)
+table(proj$Sample, proj$PIMO_pos)
+
+# Neftel states for each patient
+table(proj$Sample, proj$Neftel_AC)
+table(proj$Sample, proj$Neftel_MES)
+table(proj$Sample, proj$Neftel_OPC)
+table(proj$Sample, proj$Neftel_NPC)
+
+# Neftel_MES and hypoxic 
+table(proj$Neftel_MES)
+table(proj$Neftel_MES, proj$DAEG_UP_24_newThr)
+table(proj$Neftel_MES, proj$PIMO_pos)
+```
+
+We can also use getGroupSummary() to summarize cellColData 
+```{r group summary}
+# access cellColData
+proj@cellColData
+
+# summary example
+getGroupSummary(
+  ArchRProj = proj,
+  groupBy = "PIMO_pos",
+  select = "TSSEnrichment", # must be numeric column
+  summary = "median",
+  removeNA = TRUE
+)
+```
 
 ```{r cell assignment table and heatmap}
 # grabs cell barcodes of cells assigned to given geneSet according to default thresholds
@@ -410,8 +446,31 @@ proj$PIMO_pos <- ifelse(getCellNames(proj) %in% cells_assignment$PIMO_pos$assign
                         TRUE, FALSE)
 
 # test if correct
-cells_assignment$Neftel_MES2$assignment %>% length # 832
-proj@cellColData$Neftel_MES2 %>% sum() # 832
+cells_assignment$Neftel_MES2$assignment %>% length # 822
+proj@cellColData$Neftel_MES2 %>% sum() # 822
+
+
+
+#### re-write above to use addCellColData()
+## add numeric AUC scores to the cellColData
+cells_AUC
+
+auc_matrix <- assay(cells_AUC)
+
+auc_matrix[1:10,1:10] %>% View
+auc_matrix["Neftel_AC",1:10]
+
+projTest <- proj
+for (set_name in rownames(auc_matrix)) {
+  projTest <- addCellColData(
+    ArchRProj = projTest,
+    data = auc_matrix[set_name, ],
+    name = paste0("AUCell_", set_name),
+    cells = colnames(auc_matrix)
+  )
+}
+
+projTest@cellColData
 ```
 
 ## plot UMAP
@@ -461,7 +520,7 @@ proj$DAEG_24_UP <- ifelse(getCellNames(proj) %in% newSelectedCells, "yes", "no")
 p4 <- plotEmbedding(
     ArchRProj = proj, 
     colorBy = "cellColData", 
-    name = "DAEG_24_UP", 
+    name = "DAEG_UP_24_newThr", 
     embedding = "UMAP_harmony",
     quantCut = c(0.01, 0.95),
     imputeWeights = NULL
@@ -472,12 +531,47 @@ exprMatrix@colData
 getCellNames(proj)
 getCellColData(proj)
 
+
+
+# plot AUCell scores and binary assignments
+p5 <- plotEmbedding(
+    ArchRProj = projTest, 
+    colorBy = "cellColData", 
+    name = "AUCell_DAEG_UP_24", 
+    embedding = "UMAP_harmony",
+    quantCut = c(0.01, 0.95),
+    imputeWeights = NULL
+)
+
 # plot
 p1
 p2
 p3
 p4
+p5
 
+# check if plots are correct
+cells_assignment$PIMO_pos$aucThr$selected # 0.05853127
+(projTest$AUCell_PIMO_pos > 0.05853127) %>% sum # 119
+projTest$PIMO_pos %>% sum # 119
+## do the mean scores their groupings
+getGroupSummary(
+  ArchRProj = projTest,
+  groupBy = "PIMO_pos",
+  select = "AUCell_PIMO_pos", # must be numeric column
+  summary = "mean",
+  removeNA = TRUE
+)
+
+
+```
+
+```{r export pdf, eval=FALSE}
+# export pdf
+pdf(here("Terekhanova", "Plots",
+         "2024-06-19_Terekhanova_passes_AUCell_DAEG_UP_24_newThr_Harmony_cluster_UMAP.pdf"))
+p4
+dev.off()
 ```
 
 # Plot Genomic Tracks
@@ -535,9 +629,24 @@ b3 <- plotBrowserTrack(
     downstream = 50000
 )
 
+## DAEG_UP_24_newThr; use matrix to plot gene scores 
+proj$DAEG_UP_24_newThr <- as.character(proj$DAEG_UP_24_newThr) # convert from logical to factor
+
+b4 <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "DAEG_UP_24_newThr", 
+    geneSymbol = geneSets[["DAEG_UP_24"]],
+    #geneSymbol = c("HK2"),
+    useMatrix = "GeneScoreMatrix",
+    plotSummary = c("bulkTrack", "featureTrack","scTrack", "geneTrack"),
+    scCellsMax = 100, # default number of cells to show in the binarized scATAC signal track
+    upstream = 50000,
+    downstream = 50000
+)
+
 
 grid::grid.newpage()
-#grid::grid.draw(b3$HK2)
+grid::grid.draw(b4$HK2)
 grid::grid.draw(b3$ERO1A) # hypoxia gene NOT part of signature
 grid::grid.draw(b3$LOX) # hypoxia gene NOT part of signature
 
@@ -547,7 +656,7 @@ grid::grid.draw(b3$LOX) # hypoxia gene NOT part of signature
 ```{r genomic track plots pdf, eval = FALSE}
 
 pdf(here("Terekhanova", "Plots",
-         "2024-06-12_Terekhanova_DAEG_UP_24_groupBy_PIMO_pos_Genomic_Track_Plots.pdf"))
+          "2024-06-12_Terekhanova_DAEG_UP_24_groupBy_PIMO_pos_Genomic_Track_Plots.pdf"))
 
 for (i in names(b2)){
 grid::grid.newpage()
@@ -575,6 +684,17 @@ grid::grid.newpage()
 grid::grid.draw(b3$HK2)
 grid::grid.draw(b3$ERO1A) # hypoxia gene NOT part of signature
 grid::grid.draw(b3$LOX) # hypoxia gene NOT part of signature
+dev.off()
+
+
+pdf(here("Terekhanova", "Plots",
+         "2024-06-19_Terekhanova_DAEG_UP_24_groupBy_DAEG_UP_24_Genomic_Track_Plots.pdf"))
+
+for (i in names(b4)){
+grid::grid.newpage()
+grid::grid.draw(b4[[i]])
+
+}
 dev.off()
 
 ```
