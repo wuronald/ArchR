@@ -1,0 +1,153 @@
+---
+title: "ArchR_H4H_installation"
+author: "Ronald Wu"
+date: "2024-07-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Build Partition
+```{bash installation}
+# access build partition
+salloc --partition=build -c 1 -t 1:0:0 --mem 2G
+
+# load R 
+module load R/4.2.1
+R --interactive
+```
+
+# R Interactive Mode
+Here we install packages interactively
+```{bash install package manager}
+
+find.package("renv") # check if already installed
+install.packages(renv)
+
+mkdir ArchR/
+cd ArchR
+```
+> Installing package into ‘/usr/local/lib/R/site-library’
+(as ‘lib’ is unspecified)
+Warning in install.packages("renv") :
+  'lib = "/usr/local/lib/R/site-library"' is not writable
+Would you like to use a personal library instead? (yes/No/cancel) yes
+Would you like to create a personal library
+‘/cluster/home/rwu/R/x86_64-pc-linux-gnu-library/4.2’
+to install packages into? (yes/No/cancel) yes
+
+## install packages continued
+```{r install packages}
+# load renv for package management
+library(renv)
+library(gitcreds)
+library(SummarizedExperiment)
+# Make sure you're in the ArchR folder
+getwd() # "/cluster/home/rwu/ArchR"
+
+# initialize 
+renv::init()
+
+# Install BiocManager if it's not already installed
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  renv::install("BiocManager")
+}
+
+# install SummarizedExperiment; from bioconductor
+## this is done first b/c ArchR installation fails to install this for some reason
+renv::install("bioc::SummarizedExperiment")
+
+# install ArchR
+  devtools::install_github("GreenleafLab/ArchR", ref="master", repos = BiocManager::repositories())
+  
+
+# install extra packages
+ArchR::installExtraPackages()
+renv::install("pkg::hexbin") # for plotting
+renv::install("pkg::harmony") # for batch correction
+renv::install("bioc::Seurat")
+
+# install genomes from bioconductor
+renv::install("bioc::BSgenome.Hsapiens.UCSC.hg19") # needed to set addArchRGenome to hg19
+renv::install("bioc::BSgenome.Hsapiens.UCSC.hg38") # needed to set addArchRGenome to hg38
+
+
+# snapshot
+
+renv::snapshot()
+
+# check cache paths
+renv::paths$cache() # "/cluster/home/rwu/.cache/R/renv/cache/v5/R-4.2/x86_64-pc-linux-gnu"
+```
+
+
+# Test tutorial dataset
+
+```{bash download dataset}
+# access build partition
+salloc --partition=build -c 1 -t 1:0:0 --mem 2G
+
+# change dir
+cd /cluster/home/rwu/ArchR
+
+# load R 
+module load R/4.2.1
+R --interactive
+```
+
+```{r restore renv}
+renv::init()
+new_path <- "/cluster/home/rwu/ArchR/renv/library/R-4.2/x86_64-pc-linux-gnu/"
+.libPaths(c(new_path, .libPaths()))
+
+find.package("ArchR")
+find.package("BSgenome.Hsapiens.UCSC.hg38")
+```
+> .libPaths()
+[1] "/cluster/home/rwu/R/x86_64-pc-linux-gnu-library/4.2"
+[2] "/usr/local/lib/R/site-library"
+[3] "/usr/lib/R/site-library"
+[4] "/usr/lib/R/library"
+
+
+```{r download dataset}
+# download tutorial data (0.5 gigs to current working directory)
+inputFiles <- getTutorialData("Hematopoiesis")
+```
+
+```{bash mv dataset}
+mkdir data/
+mv -f /cluster/home/rwu/ArchR/HemeFragments/ /cluster/projects/wouterslab/ArchR/data
+```
+
+# Load libraries
+```{r load libraries}
+library(here)
+library(ArchR)
+```
+```{r input}
+inputFiles <- c("data/HemeFragments/scATAC_BMMC_R1.fragments.tsv.gz",
+                "data/HemeFragments/scATAC_CD34_BMMC_R1.fragments.tsv.gz",
+                "data/HemeFragments/scATAC_PBMC_R1.fragments.tsv.gz")
+names(inputFiles) <- c("scATAC_BMMC_R1","scATAC_CD34_BMMC_R1", "scATAC_PBMC_R1")
+```
+
+```{r creating arrow files}
+# set genome to hg19
+addArchRGenome("hg19")
+
+# create arrow files (subset, first sample only)
+ArrowFiles <- createArrowFiles(
+  inputFiles = inputFiles,
+  sampleNames = names(inputFiles),
+  minTSS = 4, # Dont set this too high because you can always increase later
+  minFrags = 1000, 
+  addTileMat = TRUE,
+  addGeneScoreMat = TRUE
+)
+
+ArrowFiles
+
+```
