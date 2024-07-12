@@ -75,6 +75,7 @@ After downloading the tutorial files, we manually moved them to the `data/` fold
 ## Creating Arrow Files
 
 ```{r creating arrow files}
+library(BSgenome.Hsapiens.UCSC.hg19)
 # set genome to hg19
 addArchRGenome("hg19")
 

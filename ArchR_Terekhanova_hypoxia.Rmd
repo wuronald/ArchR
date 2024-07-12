@@ -683,6 +683,11 @@ proj_hyp <- addGroupCoverages(ArchRProj = proj,
                            groupBy = "DAEG_UP_24_newThr" # group for which the pseudobulk rep is made
                            )
 
+proj$PIMO_pos <- as.factor(proj$PIMO_pos)
+proj_hyp <- addGroupCoverages(ArchRProj = proj,
+                           groupBy = "PIMO_pos" # group for which the pseudobulk rep is made
+                           )
+
 ```
 The `addGroupCoverages` is a long (13 mins) and memory intensive step that produces large intermediate files in the `Terekhanova/GroupCoverages/DAEG_UP_24_newThr/` folder.
 # Calling Peaks

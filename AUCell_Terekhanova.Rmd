@@ -75,10 +75,11 @@ Since the `getMatrixFromProject()` function from ArchR returns a SummarizedExper
 AUCell has implemented functions to utilize signatures obtained using the `GSEAbase` package. We will skip using those functions, since our external gene sets of interest are `.txt` files. They have been moved to the `data/Signatures/` folder.
 
 ```{r load gene sets}
-# load DAEG and Neftel signatures saved as previously saved as .txt
+# Load DAEG and Neftel signatures:
+## saved as previously saved as .txt
 
 ## get paths
-txt_files <- list.files(path = here("data","Signatures"), pattern = "\\.txt$", full.names = TRUE)
+txt_files <- list.files(path = here::here("data","Signatures"), pattern = "\\.txt$", full.names = TRUE)
 
 ## read the .txt files into a list
 geneSets <- lapply(txt_files, read_lines)
@@ -86,25 +87,27 @@ geneSets <- lapply(txt_files, read_lines)
 ## name the elements of the list based on the original file name (without path and extension)
 names(geneSets) <- tools::file_path_sans_ext(basename(txt_files))
 
-## *** Load additional gene sets (not txt files) *** #
-PIMO_pos <- read_csv(here("data","Signatures","pimo_sig",
-              "pos_vs_neg","pimo_pos_rankings.csv")) %>%
+# *** Load additional gene sets (not txt files) *** #
+
+PIMO_pos <- read_csv(
+  here::here(
+    "data",
+    "Signatures",
+    "pimo_sig",
+    "pos_vs_neg",
+    "pimo_pos_rankings.csv"
+  )
+) %>%
   pull(names)
   
 PIMO_pos %>% length # 267
-###########
 
-## append additional gene sets to list
+# Append additional gene sets to list (if needed)
 geneSets <- append(geneSets, list(PIMO_pos = PIMO_pos))
 
-
-
-## add the gene set size to the names (req GSEABase obj)
-# geneSets <- setGeneSetNames(geneSets, newNames=paste(names(geneSets), " (", nGenes(geneSets) ,"g)", sep=""))
-
-# add hypoxia signatures:
-
-# function that checks if genes in the geneSets are in the GeneScoreMatrix
+# Function: calculate_overlap 
+## Checks if genes in the geneSets are in the GeneScoreMatrix
+## Note: Consider other gene sets if many genes are missing from the GeneScoreMatrix
 
 calculate_overlap <- function(se, geneSets) {
   # extract gene symbols from the SummarizedExperiment
@@ -170,8 +173,9 @@ if (!exists("cells_AUC")) {
     # save cells_AUC
     save(cells_AUC, file = "Terekhanova/AUCell/cells_AUC.RData")
   }
+}
 
-cell_rankings
+#cell_rankings
 cells_AUC
 
 # check # of expressed/detected genes in dataset
@@ -201,18 +205,16 @@ For each gene set, AUCell asks the question, are the genes in the gene set detec
 
 Depending on the type of distribution for each gene set, several thresholds are calculated and assigned by default. We can visually inspect these thresholds by plotting their histograms. Manual intervention can be done to reassign a threshold if a given distribution is ambiguous.
 
-```{r thresholds, eval = FALSE}
+```{r AUCell cell assignment and thresholds}
 set.seed(42)
 par(mfrow=c(3,3))
 
 # plot all AUC histograms (for all geneSets) and calculates likely thresholds
-pdf(here("Terekhanova","Plots","2024-06-07_Terekhanova_AUCell_cells_assignment.pdf"))
+
 cells_assignment <- AUCell_exploreThresholds(cells_AUC, 
                                              plotHist = TRUE,
                                              assign = TRUE)
-
-dev.off()
-
+# display warning messages
 warningMsg <- sapply(cells_assignment, function(x) x$aucThr$comment)
 warningMsg[which(warningMsg!="")]
 
@@ -225,6 +227,20 @@ cells_assignment$DAEG_UP_24$aucThr$selected # minimumDens
 # of cells assigned 
 cells_assignment$DAEG_UP_24$assignment %>% length() # 23353
 ```
+## Plot thresholds for each geneSet
+We re-run the `AUCell_exploreThresholds` function which both plots the histogram of all the cells and their AUCell scores/thresholds each geneSet. This time, a PDF is created to capture and save the plots.
+
+```{r plot AUCell thresholds, eval = FALSE}
+set.seed(42)
+par(mfrow=c(3,3))
+
+# plot all AUC histograms (for all geneSets) and calculates likely thresholds
+pdf(here::here("Terekhanova","Plots","2024-06-07_Terekhanova_AUCell_cells_assignment.pdf"))
+  AUCell_exploreThresholds(cells_AUC,
+                           plotHist = TRUE,
+                           assign = TRUE)
+dev.off()
+```
 
 ## manual threshold setting
 
@@ -233,20 +249,20 @@ Let's inspect the distribution of AUC for gene sets of interest. For DAEG_UP_24,
 ```{r manual thresholds}
 # plot AUC histogram for DAEG_UP_24 gene set: 
 geneSetName <- rownames(cells_AUC)[grep("DAEG_UP_24", rownames(cells_AUC))]
-AUCell_plotHist(cells_AUC[geneSetName,], aucThr= 0.01381947,
+AUCell_plotHist(cells_AUC[geneSetName,], aucThr= 0.01382158,
                 title = "old threshold")
-abline(v= 0.01381947)
+abline(v= 0.01382158)
 
 # set new threshold
-newThr = 0.10400131 # L_k2 threshold
+newThr = 0.10406154 # L_k2 threshold
 
 # get barcodes for cells that pass new threshold
 newSelectedCells <- names(which(getAUC(cells_AUC)[geneSetName,]>newThr))
-length(newSelectedCells) # 1448
+length(newSelectedCells) # 1441
 
 # get barcodes for cells for previous default threshold
 oldSelectedCells <- cells_assignment$DAEG_UP_24$assignment
-length(oldSelectedCells) # 23353
+length(oldSelectedCells) # 23355
 ```
 
 When looking at the density curve, there is no obvious inflection point. There is also no obvious bimodal distribution. We do expect hypoxic cells to be a gradient rather than a positive vs negative bimodal distribution.
@@ -295,6 +311,7 @@ pdf(here("Terekhanova", "Plots",
 dev.off()
 
 ```
+
 # Exploring the cell-assignment (table & heatmap)
 
 Given that we've assigned the cells (their barcodes) basesd on their AUC for each given gene set, we can visualize this through a binary incidence matrix via a heatmap.
@@ -410,9 +427,7 @@ dev.off()
 
 ```
 
-# Colorize UMAPs with AUCell assigned cell types/states
-
-## Add AUCell assignments to ArchRProject object
+# Add AUCell assignments to ArchRProject object
 
 One way to plot the AUCell assignments is to append additional info into the CellColData slot in the ArchRProject object. We can then use the `ArchR::plotEmbedding()` function to plot the UMAP with additional parameters, such as highlighting the cells (or their barcodes) that have been assigned to a given gene set. These assignments have been determined previously (see above) through `AUCell` and pass a specific AUC score threshold. 
 
@@ -453,27 +468,25 @@ proj@cellColData$Neftel_MES2 %>% sum() # 822
 
 #### re-write above to use addCellColData()
 ## add numeric AUC scores to the cellColData
-cells_AUC
-
 auc_matrix <- assay(cells_AUC)
 
-auc_matrix[1:10,1:10] %>% View
-auc_matrix["Neftel_AC",1:10]
-
-projTest <- proj
 for (set_name in rownames(auc_matrix)) {
-  projTest <- addCellColData(
-    ArchRProj = projTest,
+  proj <- addCellColData(
+    ArchRProj = proj,
     data = auc_matrix[set_name, ],
     name = paste0("AUCell_", set_name),
     cells = colnames(auc_matrix)
   )
 }
 
-projTest@cellColData
+# check if AUC scores added
+proj@cellColData
+
 ```
 
-## plot UMAP
+# Plot UMAP
+## Colorize UMAPs with AUCell assigned cell types/states
+
 ```{r colorize umaps}
 # ArchRProject object
 proj
@@ -522,16 +535,19 @@ p4 <- plotEmbedding(
     colorBy = "cellColData", 
     name = "DAEG_UP_24_newThr", 
     embedding = "UMAP_harmony",
-    quantCut = c(0.01, 0.95),
+    quantCut = c(0.01, 0.55),
     imputeWeights = NULL
 )
 
-
-exprMatrix@colData
-getCellNames(proj)
-getCellColData(proj)
-
-
+p4
+plotEmbedding(
+    ArchRProj = projTest, 
+    colorBy = "cellColData", 
+    name = "DAEG_UP_24_newThr", 
+    embedding = "UMAP_harmony",
+    #quantCut = c(0.01, 0.95),
+    imputeWeights = NULL
+)
 
 # plot AUCell scores and binary assignments
 p5 <- plotEmbedding(
@@ -570,6 +586,7 @@ getGroupSummary(
 # export pdf
 pdf(here("Terekhanova", "Plots",
          "2024-06-19_Terekhanova_passes_AUCell_DAEG_UP_24_newThr_Harmony_cluster_UMAP.pdf"))
+p3
 p4
 dev.off()
 ```

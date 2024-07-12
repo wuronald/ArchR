@@ -1,0 +1,376 @@
+---
+title: "ArchR_Extended_Visualizations"
+author: "Ronald Wu"
+date: "2024-06-26"
+output: html_document
+---
+
+# Introduction
+
+Although ArchR has built in plotting functions useful for visualizing high dimensional data from ArchR processed scATAC data, additional plotting functionality is often desired. Here we will explore using `scCustomize` and `Seurat` plotting functions to improve visualization
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Install Packages
+```{r install packages, eval = FALSE}
+install.packages("scCustomize")
+
+BiocManager::install(c("ComplexHeatmap", "dittoSeq", "DropletUtils", "Nebulosa"))
+```
+
+# Load Libraries
+```{r load libraries}
+library(here)
+library(ArchR) # version 1.0.2
+
+library(scCustomize)
+```
+
+# Load ArchRProject
+```{r load ArchRProject}
+
+proj <- loadArchRProject(path = "Save-proj")
+```
+# Extract ArchRProject Data for scCustomize
+
+scCustomize is designed to work primarily on Seurat objects. Thus, ArchRProject objects are not directly compatible with scCustomize and require extraction of their relevent data for use.
+
+```{r extract data}
+
+# ** optional **
+# load previously saved GeneScoreMatrix:
+if (exists("exprMatrix")) {
+  print("exprMatrix already loaded in environment")
+} else {
+  file_path <- "Terekhanova/AUCell/TerekhanovaExprMatrix.RData"
+  if (file.exists(file_path)) {
+    print("Loading exprMatrix from directory")
+    load(file = file_path)
+  } else {
+    print("exprMatrix not in environment or directory, loading from ArchRProject object")
+    exprMatrix <- getMatrixFromProject(proj, useMatrix = "GeneScoreMatrix")
+    
+    # Uncomment the following line if you want to save the matrix for future use
+    # save(exprMatrix, file = file_path)
+  }
+}
+
+# Extract GeneScoreMatrix from ArchRProject
+# gene_exp_matrix <- getMatrixFromProject(
+#   ArchRProj = proj,
+#   useMatrix = "GeneScoreMatrix",
+#   verbose = FALSE
+# )
+
+# add rownames
+rownames(exprMatrix) <- rowData(exprMatrix)$name
+
+# Create Seurat Object
+seurat_obj <- CreateSeuratObject(counts = assay(exprMatrix),
+                                 assay = "GeneScoreMatrix")
+
+# Add cell metadata
+cell_metadata <- getCellColData(ArchRProj = proj)
+seurat_obj <- AddMetaData(seurat_obj, metadata = as.data.frame(cell_metadata))
+
+# Add dimensionality reduction embeddings
+# For example, adding UMAP embeddings
+umap_embeddings <- getEmbedding(ArchRProj = proj, 
+                                embedding = "UMAP_harmony", 
+                                returnDF = FALSE # returns the object instead of df
+                                )
+
+###
+# 4. Add dimensionality reduction embeddings (updated with error handling)
+# Function to safely add embeddings
+add_embedding <- function(embedding_name) {
+  tryCatch({
+    embeddings <- getEmbedding(ArchRProj = proj, embedding = embedding_name)
+    
+    # Check if embeddings are not empty
+    if (ncol(embeddings) > 0 && nrow(embeddings) > 0) {
+      # Ensure embeddings match cells in Seurat object
+      embeddings <- embeddings[colnames(seurat_obj), ]
+      
+      seurat_obj[[tolower(embedding_name)]] <- CreateDimReducObject(
+        embeddings = as.matrix(embeddings),
+        key = paste0(toupper(embedding_name), "_")
+      )
+      cat(paste("Added", embedding_name, "embeddings.\n"))
+    } else {
+      cat(paste("Warning:", embedding_name, "embeddings are empty.\n"))
+    }
+  }, error = function(e) {
+    cat(paste("Error adding", embedding_name, "embeddings:", e$message, "\n"))
+  })
+  
+  return(seurat_obj)
+}
+
+# Add the UMAP_harmony embedding (previously made in the ArchRProject object proj)
+seurat_obj <- add_embedding("UMAP_harmony")
+
+seurat_obj@reductions$umap_harmony
+
+# change orig.ident to harmony clusters
+seurat_obj$orig.ident <- seurat_obj$Clusters_harmony
+
+# Switching Identity in Seurat object to one of the meta.data columns: "Clusters_harmony"
+Idents(seurat_obj) <- "Clusters_harmony"
+
+# To switch back to orig.ident
+Idents(seurat_obj) <- "orig.ident"
+
+
+```
+> Warning: Feature names cannot have underscores ('_'), replacing with dashes ('-')Warning: Feature names cannot have underscores ('_'), replacing with dashes ('-'). 
+
+
+
+# scCustomize Plotting functions
+
+## UMAP
+```{r UMAP with Seurat}
+# show clusters
+DimPlot(seurat_obj, reduction = "umap_harmony", group.by = "Clusters_harmony")
+
+DimPlot_scCustom(seurat_object = seurat_obj)
+
+# show samples
+DimPlot_scCustom(seurat_object = seurat_obj,
+                 group.by = "Sample")
+```
+
+```{r UMAP with scCustomize}
+
+# Use scCustomize functions for plotting
+# Example: Create a UMAP plot with custom color palette
+
+FeaturePlot_scCustom(
+  seurat_obj = seurat_obj, 
+  features = "TSSEnrichment",
+  reduction = "umap_harmony",
+  colors_use = viridis_plasma_dark_high,
+  pt.size = 0.1,
+  order = FALSE
+)
+
+# Move positive cells to the front of plot; setting order = TRUE
+FeaturePlot_scCustom(
+  seurat_obj = seurat_obj, 
+  features = "TSSEnrichment",
+  reduction = "umap_harmony",
+  colors_use = viridis_plasma_dark_high,
+  pt.size = 0.1,
+  order = TRUE
+)
+
+```
+
+## UMAP with Cluster_Highlight_Plot for Clusters
+```{r UMAP Cluster Highlight}
+
+# Try plotting discrete meta data: Clusters_harmony
+
+## 1. Switching Identity in Seurat object to one of the meta.data columns: "Clusters_harmony"
+Idents(seurat_obj) <- "Clusters_harmony"
+
+## 2. Plot
+
+Cluster_Highlight_Plot(seurat_object = seurat_obj, cluster_name = "C1", highlight_color = "navy",
+    background_color = "lightgray")
+
+Cluster_Highlight_Plot(seurat_object = seurat_obj, cluster_name = "C20", highlight_color = "forestgreen",
+    background_color = "lightgray")
+
+## 3. Show multiple identities
+
+Cluster_Highlight_Plot(
+  seurat_object = seurat_obj,
+  cluster_name = c("C1", "C20"),
+  highlight_color = c("navy", "forestgreen"),
+  background_color = "lightgray"
+)
+
+```
+## FeaturePlots
+```{r feature plots}
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "Neftel_MES", alpha_exp = 0.75)
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "AUCell_Neftel_MES", alpha_exp = 0.75)
+
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "Neftel_MES1", alpha_exp = 0.75)
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "AUCell_Neftel_MES1", alpha_exp = 0.75)
+
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "Neftel_MES2", alpha_exp = 0.75)
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "AUCell_Neftel_MES2", alpha_exp = 0.75)
+
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "PIMO_pos", alpha_exp = 0.75)
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "AUCell_PIMO_pos", alpha_exp = 0.75)
+
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "DAEG_UP_24_newThr", alpha_exp = 0.75)
+FeaturePlot_scCustom(seurat_object = seurat_obj, features = "AUCell_DAEG_UP_24", alpha_exp = 0.75)
+
+```
+## UMAP with Meta_Highlight_plot for any meta data (factor, character, logical)
+```{r UMAP Cluster Highlight}
+# meta data cols
+names(seurat_obj@meta.data)
+
+# highlight
+Meta_Highlight_Plot(
+  seurat_object = seurat_obj,
+  meta_data_column = "PIMO_pos",
+  meta_data_highlight = TRUE,
+  highlight_color = "firebrick",
+  background_color = "lightgray"
+)
+
+Meta_Highlight_Plot(
+  seurat_object = seurat_obj,
+  meta_data_column = "DAEG_UP_24_newThr",
+  meta_data_highlight = TRUE,
+  highlight_color = "firebrick",
+  background_color = "lightgray"
+)
+
+# With Seurat 
+DimPlot(seurat_obj, reduction = "umap_harmony", group.by = "PIMO_pos")
+DimPlot(seurat_obj, reduction = "umap_harmony", group.by = "DAEG_UP_24_newThr")
+
+```
+## Highlight cells based on Marker
+```{r highlight cells based on marker}
+
+markerGenes  <- c(
+    "CD34", #Early Progenitor
+    "GATA1", #Erythroid
+    "PAX5", "MS4A1", #B-Cell Trajectory
+    "CD14", #Monocytes
+    "CD3D", "CD8A", "TBX21", "IL7R" #TCells
+  )
+
+# Get cell names
+MS4A1 <- WhichCells(object = seurat_obj, expression = MS4A1 > 1)
+CA9 <- WhichCells(object = seurat_obj, expression = CA9 > 2)
+CD34 <- WhichCells(object = seurat_obj, expression = CD34 > 5)
+
+# Make into list
+cells <- list(
+              CD34 = CD34)
+
+# Plot
+Cell_Highlight_Plot(seurat_object = seurat_obj, cells_highlight = cells)
+
+assay(exprMatrix)["CD34",] %>% range()
+assay(exprMatrix)["CD34",] %>% hist
+assay(exprMatrix)["CD34",] %>% quantile
+rm(CD34)
+```
+
+# FeatureScatter Plots 
+```{r scatter plots}
+names(seurat_obj@meta.data)
+
+# Create Plots
+FeatureScatter_scCustom(
+  seurat_object = seurat_obj,
+  feature1 = "AUCell_PIMO_pos",
+  feature2 = "AUCell_DAEG_UP_24",
+  colors_use = viridis_plasma_dark_high,
+  ggplot_default_colors = TRUE,
+  split.by = "PIMO_pos",
+  group.by = "ident",
+  #num_columns = 1,
+  pt.size = 1
+)
+```
+Can include correlation 
+
+# PDF compilation
+```{r pdf compilation, eval = FALSE}
+here::here()
+getOutputDirectory(proj)
+
+# save meta data colnames
+meta_data <- seurat_obj@meta.data %>% names
+meta_data
+
+
+# plotPDF(u1,u2,u3,u4,u5,
+#         name = "Terekhanova-scCustomPlot-UMAP-HarmonyClusters-AUCell-scores.pdf", 
+#         ArchRProj = proj, 
+#         addDOC = TRUE, 
+#         width = 5, height = 5)
+
+# pdf(here::here("Terekhanova","Plots",
+#          "2024-07-03_Terekhanova_scCustom_passes_AUCell_all_geneSets_Harmony_UMAP.pdf"))
+# # show samples
+# DimPlot_scCustom(seurat_object = seurat_obj,
+#                  group.by = "Sample")
+# 
+# # harmony clusters
+# DimPlot_scCustom(seurat_object = seurat_obj) +
+#   ggtitle("Harmony Clusters")
+# 
+# Meta_Highlight_Plot(
+#   seurat_object = seurat_obj,
+#   meta_data_column = "PIMO_pos",
+#   meta_data_highlight = TRUE,
+#   highlight_color = "firebrick",
+#   background_color = "lightgray"
+# ) + 
+#   ggtitle("PIMO_pos")
+# 
+# Meta_Highlight_Plot(
+#   seurat_object = seurat_obj,
+#   meta_data_column = "DAEG_UP_24_newThr",
+#   meta_data_highlight = TRUE,
+#   highlight_color = "firebrick",
+#   background_color = "lightgray"
+# ) +
+#   ggtitle("DAEG_UP_24_newThr")
+# 
+# dev.off()
+
+
+pdf(here::here("Terekhanova","Plots",
+         "2024-07-03_Terekhanova_scCustom_passes_AUCell_all_geneSets_Harmony_UMAP.pdf"))
+# show samples
+DimPlot_scCustom(seurat_object = seurat_obj,
+                 group.by = "Sample")
+
+# harmony clusters
+DimPlot_scCustom(seurat_object = seurat_obj) +
+  ggtitle("Harmony Clusters")
+
+# plot the binary cell assignments from AUCell
+for (i in 21:31) {
+  z <-
+    Meta_Highlight_Plot(
+      seurat_object = seurat_obj,
+      meta_data_column = meta_data[i],
+      meta_data_highlight = TRUE,
+      highlight_color = "firebrick",
+      background_color = "lightgray"
+    ) +
+    ggtitle(meta_data[i])
+  
+  print(z)
+}
+
+# plot the AUCell scores
+for (i in 32:41) {
+
+z <- FeaturePlot_scCustom(seurat_object = seurat_obj, features = meta_data[i], alpha_exp = 0.75) +
+        ggtitle(paste0("AUCell score: ", meta_data[i]))
+
+  print(z)
+}
+
+
+dev.off()
+```
+
+
+

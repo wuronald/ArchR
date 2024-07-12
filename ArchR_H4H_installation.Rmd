@@ -140,6 +140,18 @@ addArchRGenome("hg19")
 
 # create arrow files (subset, first sample only)
 ArrowFiles <- createArrowFiles(
+  inputFiles = inputFiles[1],
+  sampleNames = names(inputFiles)[1],
+  minTSS = 4, # Dont set this too high because you can always increase later
+  minFrags = 1000, 
+  addTileMat = TRUE,
+  addGeneScoreMat = TRUE
+)
+
+ArrowFiles
+
+# create arrow files (all 3 tutorial samples)
+ArrowFiles <- createArrowFiles(
   inputFiles = inputFiles,
   sampleNames = names(inputFiles),
   minTSS = 4, # Dont set this too high because you can always increase later
@@ -150,4 +162,24 @@ ArrowFiles <- createArrowFiles(
 
 ArrowFiles
 
+```
+
+```{r ArchRProject}
+doubScores <- addDoubletScores(
+    input = ArrowFiles,
+    k = 10, #Refers to how many cells near a "pseudo-doublet" to count.
+    knnMethod = "UMAP", #Refers to the embedding to use for nearest neighbor search with doublet projection.
+    LSIMethod = 1
+)
+
+projHeme1 <- ArchRProject(
+  ArrowFiles = ArrowFiles, 
+  outputDirectory = "HemeTutorial",
+  copyArrows = TRUE #This is recommened so that if you modify the Arrow files you have an original copy for later usage.
+)
+
+```
+
+```{bash run slurm job; eval=FALSE}
+sbatch /cluster/projects/wouterslab/ArchR/scripts/run_archr_tutorial.sh
 ```
